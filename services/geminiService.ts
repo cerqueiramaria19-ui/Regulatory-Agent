@@ -194,18 +194,47 @@ export const generateValueProposition = async (analysis: SavedAnalysis): Promise
     ).join('\n');
 
     const prompt = `
-        Com base na seguinte análise de um documento regulatório, atue como um consultor de negócios sênior e estratégico da BIP.
-        Sua tarefa é criar os dados para uma "Proposta de Valor" completa e persuasiva para ser apresentada a um cliente.
-        A proposta deve explicar por que é crucial que o cliente se adeque a essas regulações e como a consultoria da BIP pode ser um parceiro estratégico nesse processo.
+        **Persona e Missão:**
+        Atue como um Consultor Sênior de Negócios e Estratégia da BIP. Sua missão é transformar uma análise técnica de um documento regulatório em uma Proposta de Valor estratégica e persuasiva para um cliente de alto nível (C-level). A linguagem deve ser sofisticada, focada em negócios e orientada a soluções, não apenas em conformidade. O objetivo é demonstrar o valor estratégico de se adequar à regulação e posicionar a BIP como o parceiro ideal para essa jornada.
 
-        Contexto da Análise:
-        Resumo do Documento: ${analysis.summary}
-        
-        Principais Requisitos Identificados:
-        ${requirementsSummary}
+        **Contexto da Análise Regulatória:**
+        - **Documento:** ${analysis.fileName}
+        - **Resumo Geral:** ${analysis.summary}
+        - **Principais Requisitos Identificados (Input para sua análise):**
+          ${requirementsSummary}
 
-        Sua resposta DEVE ser um objeto JSON que corresponda ao esquema fornecido.
-        Analise os requisitos e agrupe-os para preencher o "Framework Estratégico de Impacto". Crie resumos concisos e acionáveis para os desafios e recomendações em cada uma das quatro áreas obrigatórias: Governança e Compliance, Operações e Processos, Tecnologia e Dados, Riscos e Jurídico.
+        **Sua Tarefa:**
+        Com base no contexto acima, gere um objeto JSON que corresponda EXATAMENTE ao esquema fornecido. Desenvolva cada campo com a profundidade e a visão estratégica de um consultor experiente.
+
+        **Diretrizes Detalhadas por Campo:**
+
+        1.  **executiveSummary:**
+            - Crie um parágrafo de abertura poderoso.
+            - Vá além do "este documento exige X". Enquadre a regulação como um catalisador para a transformação ou uma mitigação de riscos críticos de negócio.
+            - Introduza o desafio central e posicione imediatamente a BIP como o parceiro estratégico com a expertise necessária para navegar essa complexidade e gerar valor.
+
+        2.  **regulatoryChallenges:**
+            - Sintetize os requisitos individuais em 2-3 desafios de negócio macro.
+            - Conecte os pontos: explique como a falha em endereçar esses pontos pode levar a riscos financeiros, operacionais, reputacionais ou de mercado.
+            - Use uma linguagem que ressoe com executivos (ex: "fragmentação de processos", "falta de visibilidade de dados", "risco de sanções e perda de competitividade").
+
+        3.  **strategicFramework:**
+            - Esta é a peça central. Analise e agrupe os requisitos de forma inteligente dentro das quatro áreas estratégicas.
+            - **Para cada 'areaName'**:
+                - **challenges**: Converta os requisitos técnicos em desafios de negócio específicos para aquela área. Seja conciso e impactante. Ex: Em vez de "REQ-005 diz que precisa de um relatório", use "Visibilidade limitada sobre dados críticos para tomada de decisão".
+                - **recommendations**: Formule recomendações de alto nível, que sejam verdadeiramente estratégicas. Ex: Em vez de "Criar o relatório do REQ-005", proponha "Desenvolver um roadmap para um Data Lakehouse corporativo que centralize informações e habilite analytics avançado, atendendo não só a esta, mas a futuras demandas regulatórias." Pense em frameworks, metodologias, otimização de processos, e governança.
+
+        4.  **ourSolution:**
+            - Apresente a abordagem da BIP como uma solução holística e integrada.
+            - Conecte diretamente a expertise da BIP (mencionando áreas como gestão de riscos, transformação digital, data analytics, etc.) às recomendações feitas no framework.
+            - Destaque o diferencial da BIP: não apenas "fazer o trabalho", but "construir capacidades internas no cliente", "usar aceleradores e metodologias comprovadas", "garantir uma transformação sustentável".
+
+        5.  **nextSteps:**
+            - Proponha próximos passos claros, acionáveis e colaborativos.
+            - Evite ser genérico. Sugira ações que demonstrem valor rapidamente.
+            - Exemplos excelentes: "Agendamento de um workshop de diagnóstico para aprofundar nos desafios mapeados", "Desenvolvimento de um business case detalhado para o projeto de adequação", "Apresentação de um plano de ação priorizado para as primeiras 6 semanas".
+
+        Sua resposta DEVE ser um objeto JSON bem-formado, aderindo estritamente ao esquema fornecido.
     `;
 
     try {
