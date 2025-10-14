@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { SavedAnalysis, Requirement, ValuePropositionData } from '../types';
 import { StarRating } from './StarRating';
@@ -38,12 +39,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
 
   const handleGenerateProposition = async () => {
     setIsPropositionModalOpen(true);
+    
+    // If a proposition already exists, show it immediately without calling the API.
+    if (analysis.valueProposition) {
+        setPropositionData(analysis.valueProposition);
+        setIsGeneratingProposition(false);
+        setPropositionError(null);
+        return;
+    }
+
+    // If not, generate it.
     setIsGeneratingProposition(true);
     setPropositionData(null);
     setPropositionError(null);
     try {
         const proposition = await generateValueProposition(analysis);
         setPropositionData(proposition);
+        // CRITICAL CHANGE: After generating, update the parent component
+        // so the proposition data is saved to localStorage.
+        onUpdate({ ...analysis, valueProposition: proposition });
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
         setPropositionError(`Falha ao gerar a proposta de valor. Erro: ${errorMessage}`);

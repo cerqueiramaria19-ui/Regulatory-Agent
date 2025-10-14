@@ -34,7 +34,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = (user: string, pass: string): boolean => {
-    if (user === 'OpenFinanceBIP' && pass === 'OFB2025') {
+    if (user === 'bipfs' && pass === 'maria123') {
         setIsAuthenticated(true);
         return true;
     }

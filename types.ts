@@ -1,3 +1,4 @@
+
 export enum AppView {
   HISTORY = 'history',
   UPLOAD = 'upload',
@@ -62,13 +63,6 @@ export interface AnalysisResult {
   fundingAgentMentions: FundingAgentMention[];
 }
 
-export interface SavedAnalysis extends AnalysisResult {
-    id: number;
-    fileName: string;
-    analyzedAt: string;
-    fileHash: string;
-}
-
 export interface StrategicFrameworkArea {
   areaName: string;
   challenges: string[];
@@ -81,4 +75,12 @@ export interface ValuePropositionData {
   strategicFramework: StrategicFrameworkArea[];
   ourSolution: string;
   nextSteps: string[];
+}
+
+export interface SavedAnalysis extends AnalysisResult {
+    id: number;
+    fileName: string;
+    analyzedAt: string;
+    fileHash: string;
+    valueProposition?: ValuePropositionData;
 }
