@@ -1,8 +1,9 @@
+
 import React, { useState, useCallback } from 'react';
 import { UploadCloudIcon, FileTextIcon, ZapIcon } from './Icons';
 
 interface FileUploadProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (file: File, instructions: string) => void;
   onNavigateToHistory: () => void;
   hasHistory: boolean;
 }
@@ -10,6 +11,7 @@ interface FileUploadProps {
 export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload, onNavigateToHistory, hasHistory }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [instructions, setInstructions] = useState('');
 
   const handleDrag = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -44,12 +46,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload, onNavigate
 
   const handleAnalyzeClick = () => {
     if (selectedFile) {
-        onFileUpload(selectedFile);
+        onFileUpload(selectedFile, instructions);
     }
   };
 
   const handleRemoveFile = () => {
       setSelectedFile(null);
+      setInstructions('');
   };
 
   return (
@@ -103,7 +106,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload, onNavigate
                 </div>
             </>
         ) : (
-            <div className="mt-8">
+            <div className="mt-8 text-left">
                 <div className="flex items-center justify-center bg-gray-100 dark:bg-gray-700 p-4 rounded-lg">
                     <FileTextIcon className="h-8 w-8 text-indigo-500 mr-4 flex-shrink-0" />
                     <div className="text-left flex-grow">
@@ -111,6 +114,21 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload, onNavigate
                         <p className="text-sm text-gray-500 dark:text-gray-400">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
                     </div>
                     <button onClick={handleRemoveFile} className="ml-4 text-sm text-gray-600 dark:text-gray-300 hover:text-indigo-500 font-semibold flex-shrink-0">Trocar arquivo</button>
+                </div>
+                
+                <div className="mt-6">
+                    <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        O que você quer analisar especificamente neste documento? (Opcional)
+                    </label>
+                    <textarea
+                        id="instructions"
+                        name="instructions"
+                        rows={3}
+                        className="block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        placeholder="Ex: Foque em encontrar cláusulas sobre multas e penalidades."
+                        value={instructions}
+                        onChange={(e) => setInstructions(e.target.value)}
+                    />
                 </div>
 
                 <button

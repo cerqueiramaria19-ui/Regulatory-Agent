@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData } from '../types';
 
@@ -95,9 +96,13 @@ const analysisSchema = {
 };
 
 
-export const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
+export const analyzeDocument = async (file: File, instructions: string): Promise<AnalysisResult> => {
     const filePart = await fileToGenerativePart(file);
     const isTextContent = 'text' in filePart;
+
+    const instructionText = instructions 
+        ? `\n\nInstrução Específica do Usuário: O usuário pediu para focar na seguinte análise: "${instructions}". Por favor, dê atenção especial a este ponto durante a sua análise.`
+        : '';
 
     const prompt = `
         Analise o documento regulatório ${isTextContent ? 'a seguir' : 'em anexo'}. Sua tarefa é extrair informações críticas e responder com um objeto JSON que corresponda ao esquema fornecido.
@@ -107,7 +112,7 @@ export const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
         - Discrepâncias ou ambiguidades no texto.
         - Menções a agentes financiadores.
         - Um resumo geral e um score de complexidade/risco.
-
+        ${instructionText}
         Preencha todos os campos do JSON de acordo com as descrições no esquema.
         Para os requisitos, o status inicial deve ser sempre '${Status.NOT_STARTED}'.
         Se não encontrar discrepâncias ou menções a agentes financiadores, retorne arrays vazios para os campos correspondentes.

@@ -45,7 +45,7 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
   };
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  const handleFileUpload = useCallback(async (file: File, instructions: string) => {
     if (file.size === 0) {
       setError('O arquivo selecionado está vazio e não pode ser analisado.');
       setAppView(AppView.ERROR);
@@ -57,7 +57,7 @@ const App: React.FC = () => {
     setProcessingFileName(file.name);
     try {
       const hash = await calculateFileHash(file);
-      const result = await analyzeDocument(file);
+      const result = await analyzeDocument(file, instructions);
       const newAnalysis: SavedAnalysis = {
           ...result,
           id: Date.now(),
