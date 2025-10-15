@@ -17,21 +17,22 @@ import { calculateFileHash } from './services/fileHashingService';
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [appView, setAppView] = useState<AppView>(AppView.UPLOAD);
-  const [history, setHistory] = useState<SavedAnalysis[]>([]);
+  // FIX: Lazily initialize history state from localStorage to ensure persistence on refresh.
+  // This function runs only once on the initial component load.
+  const [history, setHistory] = useState<SavedAnalysis[]>(() => getAnalysisHistory());
   const [currentAnalysis, setCurrentAnalysis] = useState<SavedAnalysis | null>(null);
   const [currentComparisonGroup, setCurrentComparisonGroup] = useState<SavedAnalysis[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingFileName, setProcessingFileName] = useState<string>('');
   
-  // On initial load, get the analysis history from localStorage.
+  // On initial load, set the correct view based on whether history exists.
   useEffect(() => {
-    const loadedHistory = getAnalysisHistory();
-    setHistory(loadedHistory);
-    // If history exists, show the history view. Otherwise, stay on the upload page.
-    if (loadedHistory.length > 0) {
+    // The history state is now initialized directly from localStorage above.
+    // This effect now only sets the initial view.
+    if (history.length > 0) {
         setAppView(AppView.HISTORY);
     }
-  }, []);
+  }, []); // Runs only once on mount.
 
   const handleLogin = (user: string, pass: string): boolean => {
     if (user === 'bipfs' && pass === 'maria123') {
