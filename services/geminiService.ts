@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData } from '../types';
 
@@ -104,27 +103,40 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
         ? `\n\nInstrução Específica do Usuário: O usuário pediu para focar na seguinte análise: "${instructions}". Por favor, dê atenção especial a este ponto durante a sua análise.`
         : '';
 
-    const prompt = `
-        Analise o documento regulatório ${isTextContent ? 'a seguir' : 'em anexo'}. Sua tarefa é extrair informações críticas e responder com um objeto JSON que corresponda ao esquema fornecido.
-        
-        Sua análise deve ser detalhada e precisa, focando em identificar:
-        - Requisitos acionáveis.
-        - Discrepâncias ou ambiguidades no texto.
-        - Menções a agentes financiadores.
-        - Um resumo geral e um score de complexidade/risco.
+    const basePrompt = `
+        **Sua Missão:** Você é um assistente de análise regulatória especializado. Sua tarefa é analisar o documento fornecido e extrair informações críticas, formatando a saída ESTRITAMENTE como um objeto JSON válido que corresponda ao esquema.
+
+        **Regras Críticas de Saída:**
+        1.  **JSON VÁLIDO:** Sua resposta DEVE ser um único objeto JSON, sem nenhum texto ou formatação adicional antes ou depois dele.
+        2.  **ESCAPAR CARACTERES:** Preste atenção especial a caracteres dentro dos textos extraídos do documento. Aspas duplas ("), barras invertidas (\\), e outros caracteres especiais DENTRO das strings do JSON DEVEM ser devidamente escapados (ex: "texto com \\"aspas\\""). A falha em escapar corretamente resultará em um JSON inválido.
+
+        **Análise Requerida:**
+        Com base no documento, identifique:
+        - Requisitos acionáveis e detalhados.
+        - Discrepâncias, ambiguidades ou conflitos no texto.
+        - Menções específicas a 'agente financiador' ou sinônimos.
+        - Um resumo executivo da análise.
+        - Um score de 0 a 5 para a complexidade e risco do documento.
         ${instructionText}
-        Preencha todos os campos do JSON de acordo com as descrições no esquema.
-        Para os requisitos, o status inicial deve ser sempre '${Status.NOT_STARTED}'.
-        Se não encontrar discrepâncias ou menções a agentes financiadores, retorne arrays vazios para os campos correspondentes.
+
+        **Instruções de Preenchimento:**
+        - Preencha todos os campos do JSON de acordo com as descrições no esquema.
+        - O status inicial para todos os requisitos deve ser sempre '${Status.NOT_STARTED}'.
+        - Se não encontrar discrepâncias ou menções a agentes financiadores, os campos 'discrepancies' e 'fundingAgentMentions' devem ser arrays vazios ([]).
     `;
+
+    // REFACTOR: The `contents` parameter must be structured correctly.
+    // For text files, a single string combining prompt and content is robust.
+    // For binary files, the request must be a valid Content object with multiple parts.
+    // The previous format `[prompt, filePart]` was incorrect and likely caused the internal server error.
+    const contents = isTextContent
+        ? `${basePrompt}\n\n--- CONTEÚDO DO DOCUMENTO ---\n\n${filePart.text}`
+        : { parts: [{ text: basePrompt }, filePart] };
 
     try {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: { parts: [
-                { text: prompt },
-                filePart
-            ]},
+            contents: contents,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: analysisSchema,
@@ -143,7 +155,21 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
             throw new Error(errorMessage);
         }
 
-        const result = JSON.parse(response.text);
+        // The model can sometimes return the JSON string wrapped in markdown backticks
+        // or with leading/trailing text. We need to sanitize it before parsing.
+        let jsonString = response.text.trim();
+        const jsonStartIndex = jsonString.indexOf('{');
+        const jsonEndIndex = jsonString.lastIndexOf('}');
+
+        if (jsonStartIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+            jsonString = jsonString.substring(jsonStartIndex, jsonEndIndex + 1);
+        } else {
+            // If we can't find a valid JSON structure, throw an error.
+            console.error("Could not find a valid JSON object in the AI response.", response.text);
+            throw new Error("A resposta da IA não continha um objeto JSON válido.");
+        }
+
+        const result = JSON.parse(jsonString);
         
         // Basic validation
         if (!result.summary || !result.requirements || !result.discrepancies || typeof result.complianceScore !== 'number' || !result.fundingAgentMentions) {
@@ -208,31 +234,22 @@ export const generateValueProposition = async (analysis: SavedAnalysis): Promise
 
         **Diretrizes Detalhadas por Campo:**
 
-        1.  **executiveSummary:**
-            - Crie um parágrafo de abertura poderoso.
-            - Vá além do "este documento exige X". Enquadre a regulação como um catalisador para a transformação ou uma mitigação de riscos críticos de negócio.
-            - Introduza o desafio central e posicione imediatamente a BIP como o parceiro estratégico com a expertise necessária para navegar essa complexidade e gerar valor.
+        1.  **executiveSummary & regulatoryChallenges & ourSolution:**
+            - Crie textos persuasivos e de alto nível, conectando o desafio regulatório à oportunidade de negócio e posicionando a BIP como parceira estratégica.
 
-        2.  **regulatoryChallenges:**
-            - Sintetize os requisitos individuais em 2-3 desafios de negócio macro.
-            - Conecte os pontos: explique como a falha em endereçar esses pontos pode levar a riscos financeiros, operacionais, reputacionais ou de mercado.
-            - Use uma linguagem que ressoe com executivos (ex: "fragmentação de processos", "falta de visibilidade de dados", "risco de sanções e perda de competitividade").
+        2.  **strategicFramework:**
+            - **Objetivo:** Sua tarefa mais importante é traduzir os requisitos técnicos em uma narrativa de negócio estratégica. Agrupe os 'Principais Requisitos Identificados' nas quatro áreas.
+            - **Processo de Pensamento (CRÍTICO):** Para cada área, siga este processo:
+                a. **Analise os Requisitos:** Leia os requisitos pertinentes àquela área (ex: "é necessário ter um processo de PLD/CFT").
+                b. **Sintetize o Desafio de Negócio:** Pergunte-se: "Qual é o RISCO ou o PROBLEMA DE NEGÓCIO de alto nível se isso não for feito?". A resposta NÃO é repetir o requisito. A resposta é o impacto. (Ex: O desafio não é "ter um processo de PLD", mas sim "Fragmentação na gestão de PLD/CFT, elevando a exposição a sanções e danos reputacionais").
+                c. **Formule a Recomendação Estratégica:** Pergunte-se: "Qual PROJETO ou INICIATIVA de consultoria a BIP venderia para resolver esse desafio?". A resposta deve ser uma solução abrangente. (Ex: A recomendação não é "fazer um processo de PLD", mas sim "Revisão e atualização completa das políticas e procedimentos de PLD/CFT, alinhando com as melhores práticas de mercado").
+            - **Instrução Final:** Use essa lógica para criar desafios que falam de riscos, ineficiências e falta de clareza. Crie recomendações que soem como projetos de consultoria completos (Modelos, Frameworks, Desenho e Implementação, etc.). A qualidade da sua resposta aqui é medida pela sua capacidade de abstrair o técnico para o estratégico.
 
-        3.  **strategicFramework:**
-            - Esta é a peça central. Analise e agrupe os requisitos de forma inteligente dentro das quatro áreas estratégicas.
-            - **Para cada 'areaName'**:
-                - **challenges**: Converta os requisitos técnicos em desafios de negócio específicos para aquela área. Seja conciso e impactante. Ex: Em vez de "REQ-005 diz que precisa de um relatório", use "Visibilidade limitada sobre dados críticos para tomada de decisão".
-                - **recommendations**: Formule recomendações de alto nível, que sejam verdadeiramente estratégicas. Ex: Em vez de "Criar o relatório do REQ-005", proponha "Desenvolver um roadmap para um Data Lakehouse corporativo que centralize informações e habilite analytics avançado, atendendo não só a esta, mas a futuras demandas regulatórias." Pense em frameworks, metodologias, otimização de processos, e governança.
-
-        4.  **ourSolution:**
-            - Apresente a abordagem da BIP como uma solução holística e integrada.
-            - Conecte diretamente a expertise da BIP (mencionando áreas como gestão de riscos, transformação digital, data analytics, etc.) às recomendações feitas no framework.
-            - Destaque o diferencial da BIP: não apenas "fazer o trabalho", but "construir capacidades internas no cliente", "usar aceleradores e metodologias comprovadas", "garantir uma transformação sustentável".
-
-        5.  **nextSteps:**
-            - Proponha próximos passos claros, acionáveis e colaborativos.
-            - Evite ser genérico. Sugira ações que demonstrem valor rapidamente.
-            - Exemplos excelentes: "Agendamento de um workshop de diagnóstico para aprofundar nos desafios mapeados", "Desenvolvimento de um business case detalhado para o projeto de adequação", "Apresentação de um plano de ação priorizado para as primeiras 6 semanas".
+        3.  **nextSteps:**
+            - Crie 3 próximos passos que representem uma jornada de engajamento clara e estratégica com o cliente.
+            - **Passo 1 (Diagnóstico):** Proponha uma ação de curto prazo e alto impacto (ex: "Workshop de Diagnóstico Estratégico para validar achados e quantificar riscos").
+            - **Passo 2 (Planejamento):** Sugira o desenvolvimento de um artefato concreto (ex: "Desenvolvimento de um Roadmap de Adequação Priorizado").
+            - **Passo 3 (Parceria):** Apresente a visão da parceria contínua (ex: "Implementação de um projeto piloto").
 
         Sua resposta DEVE ser um objeto JSON bem-formado, aderindo estritamente ao esquema fornecido.
     `;
@@ -252,7 +269,20 @@ export const generateValueProposition = async (analysis: SavedAnalysis): Promise
             throw new Error("A IA não retornou um texto válido para a proposta de valor.");
         }
 
-        const result = JSON.parse(response.text);
+        // The model can sometimes return the JSON string wrapped in markdown backticks
+        // or with leading/trailing text. We need to sanitize it before parsing.
+        let jsonString = response.text.trim();
+        const jsonStartIndex = jsonString.indexOf('{');
+        const jsonEndIndex = jsonString.lastIndexOf('}');
+
+        if (jsonStartIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+            jsonString = jsonString.substring(jsonStartIndex, jsonEndIndex + 1);
+        } else {
+            console.error("Could not find a valid JSON object in the AI response for value proposition.", response.text);
+            throw new Error("A resposta da IA para a proposta de valor não continha um objeto JSON válido.");
+        }
+
+        const result = JSON.parse(jsonString);
 
         // Validação básica da estrutura
         if (!result.executiveSummary || !result.strategicFramework || result.strategicFramework.length !== 4) {
