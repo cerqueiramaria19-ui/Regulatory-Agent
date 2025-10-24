@@ -121,16 +121,18 @@ export const RequirementModal: React.FC<RequirementModalProps> = ({ isOpen, onCl
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                     <h3 className="text-xl font-semibold leading-6 text-gray-900 dark:text-white">Detalhes do Requisito: {requirement.id}</h3>
-                    <button
-                        onClick={handleSavePdf}
-                        disabled={isSavingPdf}
-                        type="button"
-                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Salvar como PDF"
-                    >
-                        <FileDownIcon className="w-4 h-4 mr-2" />
-                        {isSavingPdf ? 'Salvando...' : 'PDF'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleSavePdf}
+                            disabled={isSavingPdf}
+                            type="button"
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Salvar como PDF"
+                        >
+                            <FileDownIcon className="w-4 h-4 mr-2" />
+                            {isSavingPdf ? 'Salvando...' : 'PDF'}
+                        </button>
+                    </div>
                 </div>
                 <div className="p-6 overflow-y-auto">
                     {renderField("Texto do Requisito", "requirementText", editedReq.requirementText, 'textarea')}

@@ -9,7 +9,7 @@ import { DiscrepancyReport } from './DiscrepancyReport';
 import { FundingAgentReport } from './FundingAgentReport';
 import { ValuePropositionModal } from './ValuePropositionModal';
 import { generateValueProposition } from '../services/geminiService';
-import { LightbulbIcon } from './Icons';
+import { LightbulbIcon, SheetIcon } from './Icons';
 
 interface DashboardProps {
   analysis: SavedAnalysis;
@@ -22,6 +22,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
   const [propositionData, setPropositionData] = useState<ValuePropositionData | null>(null);
   const [propositionError, setPropositionError] = useState<string | null>(null);
   const [isGeneratingProposition, setIsGeneratingProposition] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   // FIX: Synchronize internal state with props to ensure updates are always displayed.
   useEffect(() => {
@@ -63,6 +64,67 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
         setPropositionError(`Falha ao gerar a proposta de valor. Erro: ${errorMessage}`);
     } finally {
         setIsGeneratingProposition(false);
+    }
+  };
+
+  const handleExportAllToExcel = () => {
+    if (!requirements || requirements.length === 0) {
+        return;
+    }
+    setIsExportingExcel(true);
+    try {
+        const headers = [
+            "ID", "Texto do Requisito", "Descrição Detalhada", "Área", "Prioridade", "Status",
+            "Evidência Textual", "Ação Necessária", "Proposta de Serviço de Consultoria",
+            "Prazo Estimado", "Responsável", "Riscos de Não Conformidade"
+        ];
+
+        const dataRows = requirements.map(req => [
+            req.id,
+            req.requirementText,
+            req.detailedDescription,
+            req.area,
+            req.priority,
+            req.status,
+            req.textualEvidence,
+            req.necessaryAction,
+            req.serviceProposal,
+            req.estimatedDeadline || 'N/A',
+            req.responsible,
+            req.nonComplianceRisks
+        ]);
+
+        const escapeCsvValue = (value: any): string => {
+            const stringValue = String(value ?? '');
+            // If the value contains the separator (semicolon), double quotes, or newline characters,
+            // it needs to be enclosed in double quotes. Any double quotes inside must be escaped by doubling them.
+            if (/[";\n]/.test(stringValue)) {
+                return `"${stringValue.replace(/"/g, '""')}"`;
+            }
+            return stringValue;
+        };
+
+        const csvContent = [
+            headers.join(';'),
+            ...dataRows.map(row => row.map(escapeCsvValue).join(';'))
+        ].join('\n');
+
+        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            const safeFileName = analysis.fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Plano_Acao_${safeFileName}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    } catch (error) {
+        console.error("Failed to export to Excel:", error);
+    } finally {
+        setIsExportingExcel(false);
     }
   };
 
@@ -129,7 +191,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
 
         {/* Requirements Table */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-semibold mb-4">Plano de Ação e Requisitos</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold">Plano de Ação e Requisitos</h3>
+            <button
+                onClick={handleExportAllToExcel}
+                disabled={isExportingExcel}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50"
+                title="Exportar todos os requisitos para Excel (CSV)"
+              >
+                  <SheetIcon className="w-5 h-5 mr-2" />
+                  {isExportingExcel ? 'Exportando...' : 'Exportar Tudo'}
+              </button>
+          </div>
           <RequirementsTable requirements={requirements} onUpdateRequirement={handleUpdateRequirement} />
         </div>
 
