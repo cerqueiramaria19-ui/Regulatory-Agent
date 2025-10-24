@@ -108,7 +108,8 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
 
         **Regras Críticas de Saída:**
         1.  **JSON VÁLIDO:** Sua resposta DEVE ser um único objeto JSON, sem nenhum texto ou formatação adicional antes ou depois dele.
-        2.  **ESCAPAR CARACTERES:** Preste atenção especial a caracteres dentro dos textos extraídos do documento. Aspas duplas ("), barras invertidas (\\), e outros caracteres especiais DENTRO das strings do JSON DEVEM ser devidamente escapados (ex: "texto com \\"aspas\\""). A falha em escapar corretamente resultará em um JSON inválido.
+        2.  **ESCAPAR ASPAS E BARRAS:** Aspas duplas (") e barras invertidas (\\) dentro de qualquer valor de string DEVEM ser escapadas com uma barra invertida precedente (ex: "texto com \\"aspas\\" e uma \\\\ barra").
+        3.  **ESCAPAR QUEBRAS DE LINHA:** Quebras de linha (newlines) dentro de qualquer valor de string DEVEM ser representadas como '\\n'. Não inclua quebras de linha literais dentro das strings. A falha em escapar esses caracteres resultará em um JSON inválido e inutilizável.
 
         **Análise Requerida:**
         Com base no documento, identifique:
@@ -124,13 +125,12 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
         - O status inicial para todos os requisitos deve ser sempre '${Status.NOT_STARTED}'.
         - Se não encontrar discrepâncias ou menções a agentes financiadores, os campos 'discrepancies' e 'fundingAgentMentions' devem ser arrays vazios ([]).
     `;
-
-    // REFACTOR: The `contents` parameter must be structured correctly.
-    // For text files, a single string combining prompt and content is robust.
-    // For binary files, the request must be a valid Content object with multiple parts.
-    // The previous format `[prompt, filePart]` was incorrect and likely caused the internal server error.
+    
+    // FIX: The `contents` parameter must be structured correctly as a `Content` object, especially when using `responseSchema`.
+    // Sending a raw string for text files was causing an "INVALID_ARGUMENT" error.
+    // This change ensures all requests use a consistent and valid structure.
     const contents = isTextContent
-        ? `${basePrompt}\n\n--- CONTEÚDO DO DOCUMENTO ---\n\n${filePart.text}`
+        ? { parts: [{ text: `${basePrompt}\n\n--- CONTEÚDO DO DOCUMENTO ---\n\n${filePart.text}` }] }
         : { parts: [{ text: basePrompt }, filePart] };
 
     try {
@@ -251,7 +251,10 @@ export const generateValueProposition = async (analysis: SavedAnalysis): Promise
             - **Passo 2 (Planejamento):** Sugira o desenvolvimento de um artefato concreto (ex: "Desenvolvimento de um Roadmap de Adequação Priorizado").
             - **Passo 3 (Parceria):** Apresente a visão da parceria contínua (ex: "Implementação de um projeto piloto").
 
-        Sua resposta DEVE ser um objeto JSON bem-formado, aderindo estritamente ao esquema fornecido.
+        **Regras Críticas de Saída:**
+        1.  **JSON VÁLIDO:** Sua resposta DEVE ser um único objeto JSON, sem nenhum texto ou formatação adicional antes ou depois dele.
+        2.  **ESCAPAR ASPAS E BARRAS:** Aspas duplas (") e barras invertidas (\\) dentro de qualquer valor de string DEVEM ser escapadas com uma barra invertida precedente (ex: "texto com \\"aspas\\" e uma \\\\ barra").
+        3.  **ESCAPAR QUEBRAS DE LINHA:** Quebras de linha (newlines) dentro de qualquer valor de string DEVEM ser representadas como '\\n'. Não inclua quebras de linha literais dentro das strings. A falha em escapar esses caracteres resultará em um JSON inválido e inutilizável.
     `;
 
     try {
