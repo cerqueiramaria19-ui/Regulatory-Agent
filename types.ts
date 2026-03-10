@@ -65,14 +65,24 @@ export interface AnalysisResult {
 
 export interface StrategicFrameworkArea {
   areaName: string;
+  pillarType: 'governance' | 'operations' | 'technology' | 'risk';
   challenges: string[];
-  recommendations: string[];
+  strategicRecommendations: string[];
+  recommendations: {
+    horizon: 'Immediate' | 'Structural' | 'Innovation';
+    text: string;
+  }[];
 }
 
 export interface ValuePropositionData {
   executiveSummary: string;
   regulatoryChallenges: string;
   strategicFramework: StrategicFrameworkArea[];
+  businessImpact: {
+    capitalEfficiency: string;
+    reputationalRisk: string;
+    operationalResilience: string;
+  };
   ourSolution: string;
   nextSteps: string[];
 }

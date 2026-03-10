@@ -3,89 +3,104 @@ import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValueProposition
 
 // Helper function to convert file to a Part object for the Gemini API
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string; }; } | { text: string; }> => {
-  // For plain text files, read them as text and send as a text part.
-  // The Gemini API can mistake a base64 encoded TXT file for a document format it needs to parse for pages.
-  // Sending it as raw text is more direct and avoids this parsing error.
+  // 1. Handle Plain Text files
   if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
     const textContent = await file.text();
     return { text: textContent };
   }
 
-  // For other file types (PDF, DOCX), convert to base64 and send as inlineData.
-  const base64EncodedData = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-            resolve(reader.result.split(',')[1]);
-        } else {
-            reject(new Error("Failed to read file as string"));
+  // 2. Handle DOCX files (Gemini doesn't support DOCX blobs natively, so we extract text)
+  if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    const arrayBuffer = await file.arrayBuffer();
+    const mammoth = (window as any).mammoth;
+    if (mammoth) {
+        try {
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            if (!result.value || result.value.trim().length === 0) {
+                throw new Error("O arquivo Word parece estar vazio ou não contém texto extraível.");
+            }
+            return { text: result.value };
+        } catch (e) {
+            console.error("Erro na extração do Mammoth:", e);
+            throw new Error("Não foi possível ler o conteúdo do arquivo Word (.docx). Tente converter para PDF.");
         }
+    } else {
+        throw new Error("Biblioteca de conversão Word não carregada. Por favor, recarregue a página.");
+    }
+  }
+
+  // 3. Handle PDF (Native Gemini support)
+  if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+    const base64EncodedData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            if (typeof reader.result === 'string') {
+                resolve(reader.result.split(',')[1]);
+            } else {
+                reject(new Error("Falha ao ler o arquivo como string."));
+            }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+    });
+    return {
+        inlineData: {
+            data: base64EncodedData,
+            mimeType: 'application/pdf',
+        },
     };
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(file);
-  });
-  return {
-    inlineData: {
-      data: base64EncodedData,
-      mimeType: file.type,
-    },
-  };
+  }
+
+  throw new Error(`O formato de arquivo '${file.name.split('.').pop()}' não é suportado. Utilize PDF, DOCX ou TXT.`);
 };
-
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 
 const analysisSchema = {
     type: Type.OBJECT,
     properties: {
-        summary: { type: Type.STRING, description: "Um resumo conciso do documento regulatório, destacando seu propósito principal e os principais pontos abordados." },
-        complianceScore: { type: Type.NUMBER, description: "Um número de 0 a 5 representando a complexidade e risco. 5 é o mais complexo/arriscado." },
+        summary: { type: Type.STRING, description: "Resumo conciso do propósito principal do documento." },
+        complianceScore: { type: Type.NUMBER, description: "Score de 0 a 5 representando complexidade e risco (5 = crítico)." },
         requirements: {
             type: Type.ARRAY,
-            description: "Uma lista de todos os requisitos acionáveis extraídos do documento.",
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    id: { type: Type.STRING, description: "Um identificador único para o requisito, no formato REQ-001, REQ-002, etc." },
-                    requirementText: { type: Type.STRING, description: "O texto resumido do requisito em no máximo 200 caracteres." },
-                    detailedDescription: { type: Type.STRING, description: "Uma explicação detalhada do que o requisito significa em termos práticos." },
-                    area: { type: Type.STRING, enum: Object.values(Area), description: `A área de negócio impactada. Deve ser um dos seguintes: ${Object.values(Area).join(', ')}` },
-                    priority: { type: Type.STRING, enum: Object.values(Priority), description: `A prioridade do requisito. Deve ser um dos seguintes: ${Object.values(Priority).join(', ')}` },
-                    status: { type: Type.STRING, enum: [Status.NOT_STARTED], description: `O status inicial do requisito. Deve ser sempre '${Status.NOT_STARTED}'.` },
-                    textualEvidence: { type: Type.STRING, description: "Citação ou referência da seção do documento que comprova o requisito." },
-                    necessaryAction: { type: Type.STRING, description: "Ação específica e clara que a empresa precisa tomar para cumprir o requisito." },
-                    serviceProposal: { type: Type.STRING, description: "Com base na 'Ação Necessária', proponha um serviço de consultoria específico que nossa empresa poderia oferecer para ajudar o cliente a cumprir este requisito. Seja claro, conciso e orientado para a solução. Exemplo: 'Consultoria para Mapeamento de Processos e Adequação de Sistemas de Reporte'." },
-                    estimatedDeadline: { type: Type.STRING, description: "O prazo mencionado no documento (ex: 'YYYY-MM-DD'), ou uma string vazia se não houver." },
-                    responsible: { type: Type.STRING, description: "Sugestão de departamento ou função responsável (ex: 'Departamento Jurídico', 'Equipe de TI')." },
-                    nonComplianceRisks: { type: Type.STRING, description: "Os riscos ou penalidades associados ao não cumprimento deste requisito." }
+                    id: { type: Type.STRING, description: "ID único (REQ-001...)" },
+                    requirementText: { type: Type.STRING, description: "Texto resumido do requisito." },
+                    detailedDescription: { type: Type.STRING, description: "Explicação prática detalhada." },
+                    area: { type: Type.STRING, description: "Área: Compliance, Jurídico ou TI" },
+                    priority: { type: Type.STRING, description: "Prioridade: Alta, Média ou Baixa" },
+                    status: { type: Type.STRING, description: "Sempre 'Não Iniciado'" },
+                    textualEvidence: { type: Type.STRING, description: "Citação do texto original." },
+                    necessaryAction: { type: Type.STRING, description: "Ação clara para cumprimento." },
+                    serviceProposal: { type: Type.STRING, description: "Sugestão de serviço de consultoria BIP." },
+                    estimatedDeadline: { type: Type.STRING, description: "Prazo ou string vazia." },
+                    responsible: { type: Type.STRING, description: "Depto sugerido." },
+                    nonComplianceRisks: { type: Type.STRING, description: "Penalidades ou riscos." }
                 },
                 required: ["id", "requirementText", "detailedDescription", "area", "priority", "status", "textualEvidence", "necessaryAction", "serviceProposal", "estimatedDeadline", "responsible", "nonComplianceRisks"]
             }
         },
         discrepancies: {
             type: Type.ARRAY,
-            description: "Uma lista de discrepâncias, ambiguidades ou conflitos encontrados. Se não houver, retorne um array vazio.",
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    id: { type: Type.STRING, description: "Um identificador único para a discrepância, no formato DISC-001, DISC-002, etc." },
-                    description: { type: Type.STRING, description: "Descrição da discrepância, ambiguidade ou conflito encontrado." },
-                    suggestion: { type: Type.STRING, description: "Sugestão de como resolver ou esclarecer a discrepância." },
-                    severity: { type: Type.STRING, enum: ['low', 'medium', 'high'], description: "A severidade da discrepância. Deve ser 'low', 'medium', ou 'high'." }
+                    id: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    suggestion: { type: Type.STRING },
+                    severity: { type: Type.STRING }
                 },
                 required: ["id", "description", "suggestion", "severity"]
             }
         },
         fundingAgentMentions: {
             type: Type.ARRAY,
-            description: "Uma lista de menções a 'agente financiador' ou sinônimos. Se não houver, retorne um array vazio.",
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    mention: { type: Type.STRING, description: "O trecho exato do texto onde 'agente financiador' (ou similar) é mencionado." },
-                    pageNumber: { type: Type.INTEGER, description: "O número da página onde a menção foi encontrada." },
-                    context: { type: Type.STRING, description: "Um breve resumo do contexto em que a menção aparece." }
+                    mention: { type: Type.STRING },
+                    pageNumber: { type: Type.INTEGER },
+                    context: { type: Type.STRING }
                 },
                 required: ["mention", "pageNumber", "context"]
             }
@@ -94,48 +109,26 @@ const analysisSchema = {
     required: ["summary", "complianceScore", "requirements", "discrepancies", "fundingAgentMentions"]
 };
 
-
 export const analyzeDocument = async (file: File, instructions: string): Promise<AnalysisResult> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const filePart = await fileToGenerativePart(file);
     const isTextContent = 'text' in filePart;
 
     const instructionText = instructions 
-        ? `\n\nInstrução Específica do Usuário: O usuário pediu para focar na seguinte análise: "${instructions}". Por favor, dê atenção especial a este ponto durante a sua análise.`
+        ? `\n\nFoco especial solicitado pelo usuário: "${instructions}".`
         : '';
 
-    const basePrompt = `
-        **Sua Missão:** Você é um assistente de análise regulatória especializado. Sua tarefa é analisar o documento fornecido e extrair informações críticas, formatando a saída ESTRITAMENTE como um objeto JSON válido que corresponda ao esquema.
+    const basePrompt = `Analise o documento regulatório anexo e extraia os requisitos, discrepâncias e menções a agentes financiadores. 
+    Retorne a resposta EXATAMENTE no formato JSON conforme o esquema definido.${instructionText}
+    Importante: Todos os requisitos devem ter status inicial como '${Status.NOT_STARTED}'.`;
 
-        **Regras Críticas de Saída:**
-        1.  **JSON VÁLIDO:** Sua resposta DEVE ser um único objeto JSON, sem nenhum texto ou formatação adicional antes ou depois dele.
-        2.  **ESCAPAR ASPAS E BARRAS:** Aspas duplas (") e barras invertidas (\\) dentro de qualquer valor de string DEVEM ser escapadas com uma barra invertida precedente (ex: "texto com \\"aspas\\" e uma \\\\ barra").
-        3.  **ESCAPAR QUEBRAS DE LINHA:** Quebras de linha (newlines) dentro de qualquer valor de string DEVEM ser representadas como '\\n'. Não inclua quebras de linha literais dentro das strings. A falha em escapar esses caracteres resultará em um JSON inválido e inutilizável.
-
-        **Análise Requerida:**
-        Com base no documento, identifique:
-        - Requisitos acionáveis e detalhados.
-        - Discrepâncias, ambiguidades ou conflitos no texto.
-        - Menções específicas a 'agente financiador' ou sinônimos.
-        - Um resumo executivo da análise.
-        - Um score de 0 a 5 para a complexidade e risco do documento.
-        ${instructionText}
-
-        **Instruções de Preenchimento:**
-        - Preencha todos os campos do JSON de acordo com as descrições no esquema.
-        - O status inicial para todos os requisitos deve ser sempre '${Status.NOT_STARTED}'.
-        - Se não encontrar discrepâncias ou menções a agentes financiadores, os campos 'discrepancies' e 'fundingAgentMentions' devem ser arrays vazios ([]).
-    `;
-    
-    // FIX: The `contents` parameter must be structured correctly as a `Content` object, especially when using `responseSchema`.
-    // Sending a raw string for text files was causing an "INVALID_ARGUMENT" error.
-    // This change ensures all requests use a consistent and valid structure.
     const contents = isTextContent
-        ? { parts: [{ text: `${basePrompt}\n\n--- CONTEÚDO DO DOCUMENTO ---\n\n${filePart.text}` }] }
-        : { parts: [{ text: basePrompt }, filePart] };
+        ? [{ parts: [{ text: `${basePrompt}\n\nCONTEÚDO DO DOCUMENTO:\n${filePart.text}` }] }]
+        : [{ parts: [filePart, { text: basePrompt }] }];
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: contents,
             config: {
                 responseMimeType: "application/json",
@@ -143,166 +136,94 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
             }
         });
 
-        if (!response || !response.text) {
-            console.error("Resposta inválida ou vazia da API Gemini:", response);
-            const finishReason = response?.candidates?.[0]?.finishReason;
-            let errorMessage = "A IA não retornou um texto válido. A resposta pode estar vazia ou bloqueada.";
-            if (finishReason === 'SAFETY') {
-                errorMessage = "A análise falhou porque o conteúdo do documento ou a resposta foi bloqueada pelas políticas de segurança.";
-            } else if (finishReason) {
-                errorMessage = `A análise foi interrompida. Motivo: ${finishReason}.`;
-            }
-            throw new Error(errorMessage);
+        if (!response.text) {
+            throw new Error("A IA retornou uma resposta vazia. Verifique se o arquivo contém texto legível.");
         }
 
-        // The model can sometimes return the JSON string wrapped in markdown backticks
-        // or with leading/trailing text. We need to sanitize it before parsing.
-        let jsonString = response.text.trim();
-        const jsonStartIndex = jsonString.indexOf('{');
-        const jsonEndIndex = jsonString.lastIndexOf('}');
-
-        if (jsonStartIndex !== -1 && jsonEndIndex > jsonStartIndex) {
-            jsonString = jsonString.substring(jsonStartIndex, jsonEndIndex + 1);
-        } else {
-            // If we can't find a valid JSON structure, throw an error.
-            console.error("Could not find a valid JSON object in the AI response.", response.text);
-            throw new Error("A resposta da IA não continha um objeto JSON válido.");
-        }
-
-        const result = JSON.parse(jsonString);
-        
-        // Basic validation
-        if (!result.summary || !result.requirements || !result.discrepancies || typeof result.complianceScore !== 'number' || !result.fundingAgentMentions) {
-            throw new Error("Resposta da IA está incompleta ou mal formatada, mesmo com o esquema.");
-        }
-
-        return result as AnalysisResult;
-
-    } catch (error) {
-        console.error("Erro ao analisar documento com a API Gemini:", error);
-        if (error instanceof SyntaxError) {
-             throw new Error(`A análise falhou porque a IA retornou um JSON inválido, mesmo com as restrições de esquema. Tente novamente.`);
-        }
-        if (error instanceof Error) {
-            throw error;
-        }
-        throw new Error("A análise do documento falhou. A API pode estar indisponível ou ocorreu um erro inesperado.");
+        return JSON.parse(response.text) as AnalysisResult;
+    } catch (error: any) {
+        console.error("Erro Gemini API:", error);
+        throw new Error(error.message || "Falha na comunicação com a API de inteligência artificial.");
     }
 };
 
 const valuePropositionSchema = {
     type: Type.OBJECT,
     properties: {
-        executiveSummary: { type: Type.STRING, description: "Um parágrafo curto e impactante introduzindo o desafio regulatório e posicionando a BIP como a solução estratégica." },
-        regulatoryChallenges: { type: Type.STRING, description: "Descrição breve dos riscos e complexidades apresentados pelos requisitos identificados, destacando os impactos de não conformidade." },
+        executiveSummary: { type: Type.STRING, description: "Sumário executivo de alto nível para o Board/Diretoria." },
+        regulatoryChallenges: { type: Type.STRING, description: "Visão geral dos desafios regulatórios críticos no contexto bancário." },
         strategicFramework: {
             type: Type.ARRAY,
-            description: "Um mapeamento didático dos requisitos em quatro áreas estratégicas de negócio.",
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    areaName: { type: Type.STRING, enum: ["Governança e Compliance", "Operações e Processos", "Tecnologia e Dados", "Riscos e Jurídico"] },
-                    challenges: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de 2 a 3 desafios-chave para esta área, resumidos dos requisitos." },
-                    recommendations: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de 2 a 3 recomendações estratégicas de alto nível para esta área." }
+                    areaName: { type: Type.STRING, description: "Nome do pilar (ex: Governança, Tecnologia, etc.)" },
+                    pillarType: { type: Type.STRING, enum: ["governance", "operations", "technology", "risk"] },
+                    challenges: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Mínimo de 5 desafios específicos e técnicos (ex: legado, dados)." },
+                    strategicRecommendations: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Mínimo de 5 recomendações estratégicas de alto nível." },
+                    recommendations: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                horizon: { type: Type.STRING, enum: ["Immediate", "Structural", "Innovation"] },
+                                text: { type: Type.STRING }
+                            },
+                            required: ["horizon", "text"]
+                        }
+                    }
                 },
-                required: ["areaName", "challenges", "recommendations"]
+                required: ["areaName", "pillarType", "challenges", "strategicRecommendations", "recommendations"]
             }
         },
-        ourSolution: { type: Type.STRING, description: "Texto apresentando como a expertise e as ferramentas da BIP podem simplificar o processo de conformidade, conectando as soluções aos desafios mapeados." },
-        nextSteps: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de 2 a 3 próximos passos sugeridos, como 'Agendar reunião de aprofundamento' ou 'Desenvolver plano de ação detalhado'." }
+        businessImpact: {
+            type: Type.OBJECT,
+            properties: {
+                capitalEfficiency: { type: Type.STRING, description: "Impacto em Basileia, provisões e eficiência de capital." },
+                reputationalRisk: { type: Type.STRING, description: "Impacto no rating e confiança do mercado." },
+                operationalResilience: { type: Type.STRING, description: "Impacto na continuidade de negócios e sistemas." }
+            },
+            required: ["capitalEfficiency", "reputationalRisk", "operationalResilience"]
+        },
+        ourSolution: { type: Type.STRING, description: "Proposta de valor da consultoria BIP focada em IFs." },
+        nextSteps: { type: Type.ARRAY, items: { type: Type.STRING } }
     },
-    required: ["executiveSummary", "regulatoryChallenges", "strategicFramework", "ourSolution", "nextSteps"]
+    required: ["executiveSummary", "regulatoryChallenges", "strategicFramework", "businessImpact", "ourSolution", "nextSteps"]
 };
 
 export const generateValueProposition = async (analysis: SavedAnalysis): Promise<ValuePropositionData> => {
-    const requirementsSummary = analysis.requirements.map(req => 
-        `- [${req.id}] ${req.requirementText} (Prioridade: ${req.priority}, Área: ${req.area}, Ação: ${req.necessaryAction})`
-    ).join('\n');
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Você é um Consultor Sênior de Estratégia e Compliance Bancário da BIP. 
+    Sua missão é transformar uma análise técnica regulatória em um Business Case de alto nível para o Board de uma Instituição Financeira.
 
-    const prompt = `
-        **Persona e Missão:**
-        Atue como um Consultor Sênior de Negócios e Estratégia da BIP. Sua missão é transformar uma análise técnica de um documento regulatório em uma Proposta de Valor estratégica e persuasiva para um cliente de alto nível (C-level). A linguagem deve ser sofisticada, focada em negócios e orientada a soluções, não apenas em conformidade. O objetivo é demonstrar o valor estratégico de se adequar à regulação e posicionar a BIP como o parceiro ideal para essa jornada.
+    CONTEXTO DO CLIENTE: Banco/Instituição Financeira de grande porte.
+    DOCUMENTO ANALISADO: ${analysis.fileName}
+    RESUMO TÉCNICO: ${analysis.summary}
+    REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 15))}
 
-        **Contexto da Análise Regulatória:**
-        - **Documento:** ${analysis.fileName}
-        - **Resumo Geral:** ${analysis.summary}
-        - **Principais Requisitos Identificados (Input para sua análise):**
-          ${requirementsSummary}
+    DIRETRIZES PARA A ANÁLISE:
+    1. LINGUAGEM EXECUTIVA: Use termos como 'Appetite ao Risco', 'Supervisão Prudencial', 'Compliance by Design', 'KRI' e 'Basileia'.
+    2. IMPACTO EM CAPITAL: Analise como a norma afeta a eficiência de capital, provisões e custos regulatórios.
+    3. DESAFIOS TÉCNICOS: Foque em interoperabilidade com sistemas legados, granularidade de dados e reporte ao BACEN/CVM. Gere pelo menos 5 desafios críticos por pilar.
+    4. RECOMENDAÇÕES ESTRATÉGICAS: Forneça pelo menos 5 recomendações estratégicas de alto nível por pilar.
+    5. FRAMEWORK DE 4 PILARES: Divida a análise em Governança, Operações, Tecnologia e Risco.
+    6. ROADMAP ESTRATÉGICO: As recomendações táticas devem ser divididas em horizontes: Imediato (Quick Wins), Estrutural (Mudança de Processos) e Inovação (Vantagem Competitiva).
 
-        **Sua Tarefa:**
-        Com base no contexto acima, gere um objeto JSON que corresponda EXATAMENTE ao esquema fornecido. Desenvolva cada campo com a profundidade e a visão estratégica de um consultor experiente.
-
-        **Diretrizes Detalhadas por Campo:**
-
-        1.  **executiveSummary & regulatoryChallenges & ourSolution:**
-            - Crie textos persuasivos e de alto nível, conectando o desafio regulatório à oportunidade de negócio e posicionando a BIP como parceira estratégica.
-
-        2.  **strategicFramework:**
-            - **Objetivo:** Sua tarefa mais importante é traduzir os requisitos técnicos em uma narrativa de negócio estratégica. Agrupe os 'Principais Requisitos Identificados' nas quatro áreas.
-            - **Processo de Pensamento (CRÍTICO):** Para cada área, siga este processo:
-                a. **Analise os Requisitos:** Leia os requisitos pertinentes àquela área (ex: "é necessário ter um processo de PLD/CFT").
-                b. **Sintetize o Desafio de Negócio:** Pergunte-se: "Qual é o RISCO ou o PROBLEMA DE NEGÓCIO de alto nível se isso não for feito?". A resposta NÃO é repetir o requisito. A resposta é o impacto. (Ex: O desafio não é "ter um processo de PLD", mas sim "Fragmentação na gestão de PLD/CFT, elevando a exposição a sanções e danos reputacionais").
-                c. **Formule a Recomendação Estratégica:** Pergunte-se: "Qual PROJETO ou INICIATIVA de consultoria a BIP venderia para resolver esse desafio?". A resposta deve ser uma solução abrangente. (Ex: A recomendação não é "fazer um processo de PLD", mas sim "Revisão e atualização completa das políticas e procedimentos de PLD/CFT, alinhando com as melhores práticas de mercado").
-            - **Instrução Final:** Use essa lógica para criar desafios que falam de riscos, ineficiências e falta de clareza. Crie recomendações que soem como projetos de consultoria completos (Modelos, Frameworks, Desenho e Implementação, etc.). A qualidade da sua resposta aqui é medida pela sua capacidade de abstrair o técnico para o estratégico.
-
-        3.  **nextSteps:**
-            - Crie 3 próximos passos que representem uma jornada de engajamento clara e estratégica com o cliente.
-            - **Passo 1 (Diagnóstico):** Proponha uma ação de curto prazo e alto impacto (ex: "Workshop de Diagnóstico Estratégico para validar achados e quantificar riscos").
-            - **Passo 2 (Planejamento):** Sugira o desenvolvimento de um artefato concreto (ex: "Desenvolvimento de um Roadmap de Adequação Priorizado").
-            - **Passo 3 (Parceria):** Apresente a visão da parceria contínua (ex: "Implementação de um projeto piloto").
-
-        **Regras Críticas de Saída:**
-        1.  **JSON VÁLIDO:** Sua resposta DEVE ser um único objeto JSON, sem nenhum texto ou formatação adicional antes ou depois dele.
-        2.  **ESCAPAR ASPAS E BARRAS:** Aspas duplas (") e barras invertidas (\\) dentro de qualquer valor de string DEVEM ser escapadas com uma barra invertida precedente (ex: "texto com \\"aspas\\" e uma \\\\ barra").
-        3.  **ESCAPAR QUEBRAS DE LINHA:** Quebras de linha (newlines) dentro de qualquer valor de string DEVEM ser representadas como '\\n'. Não inclua quebras de linha literais dentro das strings. A falha em escapar esses caracteres resultará em um JSON inválido e inutilizável.
-    `;
+    Retorne um JSON robusto seguindo estritamente o esquema fornecido.`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: { parts: [{ text: prompt }] },
+            model: "gemini-3-flash-preview",
+            contents: [{ parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",
                 responseSchema: valuePropositionSchema,
             }
         });
 
-        if (!response || !response.text) {
-            console.error("Resposta inválida da API Gemini ao gerar proposta de valor:", response);
-            throw new Error("A IA não retornou um texto válido para a proposta de valor.");
-        }
-
-        // The model can sometimes return the JSON string wrapped in markdown backticks
-        // or with leading/trailing text. We need to sanitize it before parsing.
-        let jsonString = response.text.trim();
-        const jsonStartIndex = jsonString.indexOf('{');
-        const jsonEndIndex = jsonString.lastIndexOf('}');
-
-        if (jsonStartIndex !== -1 && jsonEndIndex > jsonStartIndex) {
-            jsonString = jsonString.substring(jsonStartIndex, jsonEndIndex + 1);
-        } else {
-            console.error("Could not find a valid JSON object in the AI response for value proposition.", response.text);
-            throw new Error("A resposta da IA para a proposta de valor não continha um objeto JSON válido.");
-        }
-
-        const result = JSON.parse(jsonString);
-
-        // Validação básica da estrutura
-        if (!result.executiveSummary || !result.strategicFramework || result.strategicFramework.length !== 4) {
-            throw new Error("A resposta da IA para a proposta de valor está incompleta ou mal formatada.");
-        }
-
-        return result as ValuePropositionData;
-
-    } catch (error)
-    {
-        console.error("Erro ao gerar proposta de valor com a API Gemini:", error);
-        if (error instanceof SyntaxError) {
-             throw new Error(`A proposta de valor falhou porque a IA retornou um JSON inválido.`);
-        }
-        if (error instanceof Error) {
-            throw new Error(`Falha ao gerar proposta de valor: ${error.message}`);
-        }
-        throw new Error("A geração da proposta de valor falhou. A API pode estar indisponível ou ocorreu um erro inesperado.");
+        return JSON.parse(response.text || '{}') as ValuePropositionData;
+    } catch (error: any) {
+        console.error("Erro Proposta Valor:", error);
+        throw new Error("Falha ao gerar a narrativa estratégica de negócio para o setor bancário.");
     }
 };

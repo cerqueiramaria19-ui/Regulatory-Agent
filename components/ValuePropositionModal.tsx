@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { ClipboardCopyIcon, FileDownIcon } from './Icons';
 import { ValuePropositionData, StrategicFrameworkArea } from '../types';
 import { StrategicFrameworkDiagram } from './StrategicFrameworkDiagram';
+import { HORIZON_LABELS, PILLAR_COLORS } from '../constants';
 
 interface ValuePropositionModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onRegenerate: () => void;
     isLoading: boolean;
     data: ValuePropositionData | null;
     error: string | null;
@@ -28,22 +30,34 @@ const ErrorDisplay: React.FC<{ message: string }> = ({ message }) => (
 );
 
 const formatDataForCopy = (data: ValuePropositionData): string => {
-    let text = `Proposta de Valor: Análise Estratégica e Plano de Ação para Conformidade Regulatória\n\n`;
+    let text = `Proposta de Valor: Análise Estratégica e Plano de Ação para Conformidade Regulatória (Setor Bancário)\n\n`;
     text += `1. Resumo Executivo\n${data.executiveSummary}\n\n`;
     text += `2. O Cenário Regulatório e Seus Desafios\n${data.regulatoryChallenges}\n\n`;
-    text += `3. Framework Estratégico de Impacto\n`;
+    
+    if (data.businessImpact) {
+        text += `3. Impacto no Negócio e Eficiência de Capital\n`;
+        text += `- Eficiência de Capital: ${data.businessImpact.capitalEfficiency || 'N/A'}\n`;
+        text += `- Risco Reputacional: ${data.businessImpact.reputationalRisk || 'N/A'}\n`;
+        text += `- Resiliência Operacional: ${data.businessImpact.operationalResilience || 'N/A'}\n\n`;
+    }
+
+    text += `4. Framework Estratégico de Impacto\n`;
     data.strategicFramework.forEach(area => {
-        text += `\n- ${area.areaName}:\n`;
+        text += `\n- ${area.areaName} (${area.pillarType || 'N/A'}):\n`;
         text += `  - Desafios:\n${area.challenges.map(c => `    - ${c}`).join('\n')}\n`;
-        text += `  - Recomendações Estratégicas:\n${area.recommendations.map(r => `    - ${r}`).join('\n')}\n`;
+        text += `  - Recomendações Estratégicas:\n${area.strategicRecommendations?.map(r => `    - ${r}`).join('\n')}\n`;
+        text += `  - Roadmap:\n${area.recommendations.map(r => {
+            if (typeof r === 'string') return `    - ${r}`;
+            return `    - [${r.horizon}] ${r.text}`;
+        }).join('\n')}\n`;
     });
-    text += `\n4. Nossa Solução e Parceria Estratégica\n${data.ourSolution}\n\n`;
-    text += `5. Próximos Passos Sugeridos\n${data.nextSteps.map(s => `- ${s}`).join('\n')}\n`;
+    text += `\n5. Nossa Solução e Parceria Estratégica\n${data.ourSolution}\n\n`;
+    text += `6. Próximos Passos Sugeridos\n${data.nextSteps.map(s => `- ${s}`).join('\n')}\n`;
     return text;
 }
 
 
-export const ValuePropositionModal: React.FC<ValuePropositionModalProps> = ({ isOpen, onClose, isLoading, data, error, fileName }) => {
+export const ValuePropositionModal: React.FC<ValuePropositionModalProps> = ({ isOpen, onClose, onRegenerate, isLoading, data, error, fileName }) => {
     const [copyButtonText, setCopyButtonText] = useState('Copiar Texto');
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     
@@ -85,39 +99,66 @@ export const ValuePropositionModal: React.FC<ValuePropositionModalProps> = ({ is
             const checkPageBreak = (neededHeight: number) => {
                 if (y + neededHeight > pageHeight - margin) {
                     pdf.addPage();
-                    y = margin;
+                    y = margin + 20; // Extra padding at top of new page
+                    return true;
                 }
+                return false;
             };
             
             const addText = (text: string, options: { currentY: number, fontSize?: number, fontStyle?: string, color?: string, align?: 'left' | 'center', maxWidth?: number }): number => {
                 const { currentY, fontSize = 10, fontStyle = 'normal', color = textColor, align = 'left', maxWidth = usableWidth } = options;
-                const splitText = pdf.splitTextToSize(text, maxWidth);
-                const textHeight = splitText.length * fontSize * 1.2;
                 pdf.setFontSize(fontSize);
                 pdf.setFont(undefined, fontStyle);
                 pdf.setTextColor(color);
-                pdf.text(splitText, align === 'center' ? pageWidth / 2 : margin, currentY, { align });
-                return currentY + textHeight;
+                
+                const splitText = pdf.splitTextToSize(text, maxWidth);
+                let localY = currentY;
+                
+                splitText.forEach((line: string) => {
+                    if (checkPageBreak(fontSize * 1.5)) {
+                        localY = y;
+                        // Re-apply styles after page break
+                        pdf.setFontSize(fontSize);
+                        pdf.setFont(undefined, fontStyle);
+                        pdf.setTextColor(color);
+                    }
+                    pdf.text(line, align === 'center' ? pageWidth / 2 : margin, localY, { align });
+                    localY += fontSize * 1.2;
+                });
+                
+                return localY;
             };
 
             const addList = (items: string[], listColor: string, currentY: number): number => {
+                let localY = currentY;
                 items.forEach(item => {
-                    const splitText = pdf.splitTextToSize(item, usableWidth - 15);
-                    const itemHeight = splitText.length * 10 * 1.2;
-                    checkPageBreak(itemHeight + 4);
                     pdf.setFontSize(14).setTextColor(listColor);
-                    pdf.text('•', margin, currentY + 8);
-                    pdf.setFontSize(10).setTextColor(textColor);
-                    pdf.text(splitText, margin + 15, currentY + 8);
-                    currentY += itemHeight + 4;
+                    if (checkPageBreak(15)) {
+                        localY = y;
+                    }
+                    pdf.text('•', margin, localY + 8);
+                    
+                    const splitText = pdf.splitTextToSize(item, usableWidth - 20);
+                    pdf.setFontSize(10).setTextColor(textColor).setFont(undefined, 'normal');
+                    
+                    splitText.forEach((line: string) => {
+                        if (checkPageBreak(12)) {
+                            localY = y;
+                            // Re-apply bullet if it was the first line of a broken item? 
+                            // Actually just continue the text
+                        }
+                        pdf.text(line, margin + 15, localY + 8);
+                        localY += 12;
+                    });
+                    localY += 4;
                 });
-                return currentY;
+                return localY;
             };
             
             const addSection = (title: string, content: string | string[]) => {
-                y += 15;
-                checkPageBreak(14 * 1.2 + 10 * 1.2 + 20); // Space for title and at least one line
-                y = addText(title, { currentY: y, fontSize: 14, fontStyle: 'bold', color: primaryColor }) + 10;
+                y += 10;
+                checkPageBreak(30);
+                y = addText(title, { currentY: y, fontSize: 14, fontStyle: 'bold', color: primaryColor }) + 5;
                 if (typeof content === 'string') {
                     y = addText(content, { currentY: y }) + 5;
                 } else if (Array.isArray(content)) {
@@ -127,63 +168,103 @@ export const ValuePropositionModal: React.FC<ValuePropositionModalProps> = ({ is
             };
 
             const addFrameworkArea = (area: StrategicFrameworkArea) => {
-                const areaColor = { "Governança e Compliance": "#3b82f6", "Operações e Processos": "#8b5cf6", "Tecnologia e Dados": "#10b981", "Riscos e Jurídico": "#f59e0b" }[area.areaName] || '#6b7280';
+                const areaColor = PILLAR_COLORS[area.pillarType] || '#6b7280';
                 
-                // Estimate height for page break check
-                const challengesHeight = area.challenges.map(c => pdf.splitTextToSize(c, usableWidth - 25).length * 10 * 1.2 + 4).reduce((a, b) => a + b, 0);
-                const recsHeight = area.recommendations.map(r => pdf.splitTextToSize(r, usableWidth - 25).length * 10 * 1.2 + 4).reduce((a, b) => a + b, 0);
-                const estimatedHeight = challengesHeight + recsHeight + 80;
-                
-                checkPageBreak(estimatedHeight);
+                // Estimate height
+                let estimatedHeight = 60; 
+                area.challenges.forEach(c => {
+                    estimatedHeight += pdf.splitTextToSize(c, usableWidth - 30).length * 12 + 4;
+                });
+                area.recommendations.forEach(r => {
+                    const text = typeof r === 'string' ? r : r.text;
+                    estimatedHeight += pdf.splitTextToSize(text, usableWidth - 30).length * 12 + 25;
+                });
+
+                // If it's too big for the current page, start on a new one
+                if (y + 100 > pageHeight - margin) {
+                    pdf.addPage();
+                    y = margin;
+                }
+
                 const startY = y;
-                let contentY = startY;
-
-                // Draw content first to get exact height, then draw box behind it
-                contentY += 15;
-                contentY = addText(area.areaName, { currentY: contentY, fontSize: 12, fontStyle: 'bold', color: headingColor });
-                contentY += 5;
-                contentY = addText('Desafios', { currentY: contentY, fontSize: 10, fontStyle: 'bold', color: redColor });
-                contentY = addList(area.challenges, redColor, contentY);
-                contentY += 10;
-                contentY = addText('Recomendações Estratégicas', { currentY: contentY, fontSize: 10, fontStyle: 'bold', color: greenColor });
-                contentY = addList(area.recommendations, greenColor, contentY);
+                y += 15;
                 
-                const boxHeight = (contentY - startY) + 15;
-
-                // Draw the box
-                pdf.setDrawColor('#E5E7EB');
-                pdf.setFillColor('#F9FAFB');
-                pdf.roundedRect(margin - 10, startY, usableWidth + 20, boxHeight, 3, 3, 'FD');
+                // Draw a colored bar at the top of the area
                 pdf.setFillColor(areaColor);
-                pdf.rect(margin - 10, startY, usableWidth + 20, 4, 'F');
+                pdf.rect(margin, y, usableWidth, 3, 'F');
+                y += 15;
+
+                y = addText(area.areaName, { currentY: y, fontSize: 12, fontStyle: 'bold', color: headingColor });
+                y += 8;
+                y = addText('Desafios Críticos', { currentY: y, fontSize: 10, fontStyle: 'bold', color: redColor });
+                y = addList(area.challenges, redColor, y);
+                y += 12;
+                y = addText('Recomendações Estratégicas', { currentY: y, fontSize: 10, fontStyle: 'bold', color: primaryColor });
+                y = addList(area.strategicRecommendations || [], primaryColor, y);
+                y += 12;
+                y = addText('Roadmap Estratégico', { currentY: y, fontSize: 10, fontStyle: 'bold', color: greenColor });
                 
-                // Redraw text on top of the box
-                let textY = startY;
-                textY += 15;
-                textY = addText(area.areaName, { currentY: textY, fontSize: 12, fontStyle: 'bold', color: headingColor });
-                textY += 5;
-                textY = addText('Desafios', { currentY: textY, fontSize: 10, fontStyle: 'bold', color: redColor });
-                textY = addList(area.challenges, redColor, textY);
-                textY += 10;
-                textY = addText('Recomendações Estratégicas', { currentY: textY, fontSize: 10, fontStyle: 'bold', color: greenColor });
-                textY = addList(area.recommendations, greenColor, textY);
+                area.recommendations.forEach(rec => {
+                    y += 8;
+                    const isLegacy = typeof rec === 'string';
+                    const horizon = isLegacy ? 'Immediate' : rec.horizon;
+                    const text = isLegacy ? rec : rec.text;
+
+                    y = addText(`[${HORIZON_LABELS[horizon] || horizon}]`, { currentY: y, fontSize: 8, fontStyle: 'bold', color: primaryColor });
+                    y = addText(text, { currentY: y, fontSize: 10, maxWidth: usableWidth - 15 });
+                });
                 
-                y = startY + boxHeight + 20;
+                y += 20;
             };
 
             // --- PDF Content Generation ---
-            y = addText('Proposta de Valor Estratégica', { currentY: y, fontSize: 22, fontStyle: 'bold', color: headingColor, align: 'center' }) + 5;
+            y = addText('Proposta de Valor Estratégica (Banking)', { currentY: y, fontSize: 22, fontStyle: 'bold', color: headingColor, align: 'center' }) + 5;
             y = addText(`Baseado no documento: ${fileName}`, { currentY: y, fontSize: 12, color: '#6b7280', align: 'center' }) + 20;
 
             addSection('1. Resumo Executivo', data.executiveSummary);
             addSection('2. O Cenário Regulatório e Seus Desafios', data.regulatoryChallenges);
             
-            y += 15;
-            y = addText('3. Framework Estratégico de Impacto', { currentY: y, fontSize: 14, fontStyle: 'bold', color: primaryColor }) + 10;
+            if (data.businessImpact) {
+                y += 15;
+                checkPageBreak(150);
+                y = addText('3. Impacto no Negócio e Eficiência de Capital', { currentY: y, fontSize: 14, fontStyle: 'bold', color: primaryColor }) + 15;
+                
+                const cardWidth = (usableWidth - 20) / 3;
+                const impactItems = [
+                    { label: 'EFICIÊNCIA DE CAPITAL', value: data.businessImpact.capitalEfficiency, color: '#3b82f6', bgColor: '#eff6ff' },
+                    { label: 'RISCO REPUTACIONAL', value: data.businessImpact.reputationalRisk, color: '#d97706', bgColor: '#fffbeb' },
+                    { label: 'RESILIÊNCIA OPERACIONAL', value: data.businessImpact.operationalResilience, color: '#059669', bgColor: '#ecfdf5' }
+                ];
+
+                let maxCardHeight = 0;
+                impactItems.forEach(item => {
+                    const h = pdf.splitTextToSize(item.value || 'N/A', cardWidth - 10).length * 10 * 1.2 + 30;
+                    if (h > maxCardHeight) maxCardHeight = h;
+                });
+
+                impactItems.forEach((item, i) => {
+                    const cardX = margin + (cardWidth + 10) * i;
+                    pdf.setFillColor(item.bgColor);
+                    pdf.roundedRect(cardX, y, cardWidth, maxCardHeight, 3, 3, 'F');
+                    pdf.setDrawColor(item.color);
+                    pdf.line(cardX, y, cardX, y + maxCardHeight);
+                    
+                    pdf.setFontSize(7).setFont(undefined, 'bold').setTextColor(item.color);
+                    pdf.text(item.label, cardX + 5, y + 12);
+                    
+                    pdf.setFontSize(9).setFont(undefined, 'normal').setTextColor(textColor);
+                    const splitVal = pdf.splitTextToSize(item.value || 'N/A', cardWidth - 10);
+                    pdf.text(splitVal, cardX + 5, y + 25);
+                });
+                
+                y += maxCardHeight + 25;
+            }
+
+            y = addText('4. Framework Estratégico de Impacto', { currentY: y, fontSize: 14, fontStyle: 'bold', color: primaryColor }) + 10;
             data.strategicFramework.forEach(addFrameworkArea);
             
-            addSection('4. Nossa Solução e Parceria Estratégica', data.ourSolution);
-            addSection('5. Próximos Passos Sugeridos', data.nextSteps);
+            addSection('5. Nossa Solução e Parceria Estratégica', data.ourSolution);
+            addSection('6. Próximos Passos Sugeridos', data.nextSteps);
 
             pdf.save(`Proposta-de-Valor-${fileName.split('.')[0] || 'documento'}.pdf`);
         } catch (error) {
@@ -207,48 +288,81 @@ export const ValuePropositionModal: React.FC<ValuePropositionModalProps> = ({ is
                             Baseado no documento: <span className="font-medium">{fileName}</span>
                         </p>
                     </div>
-                     {!isLoading && data && (
-                        <button 
-                            onClick={handleGeneratePdf}
-                            type="button" 
-                            disabled={isGeneratingPdf}
-                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                        >
-                            <FileDownIcon className="w-4 h-4 mr-2" />
-                            {isGeneratingPdf ? 'Gerando...' : 'Gerar PDF'}
-                        </button>
-                    )}
+                     <div className="flex items-center gap-3">
+                        {!isLoading && data && (
+                            <button 
+                                onClick={onRegenerate}
+                                type="button" 
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md shadow-sm hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                Regenerar
+                            </button>
+                        )}
+                        {!isLoading && data && (
+                            <button 
+                                onClick={handleGeneratePdf}
+                                type="button" 
+                                disabled={isGeneratingPdf}
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            >
+                                <FileDownIcon className="w-4 h-4 mr-2" />
+                                {isGeneratingPdf ? 'Gerando...' : 'Gerar PDF'}
+                            </button>
+                        )}
+                     </div>
                 </div>
                 <div className="p-6 flex-grow overflow-y-auto">
                     {isLoading && <LoadingSpinner />}
                     {error && <ErrorDisplay message={error} />}
                     {data && (
                         <div className="space-y-8">
-                           <div className="p-6 bg-white dark:bg-gray-900 rounded-lg shadow-sm">
+                           <div className="p-6 bg-white dark:bg-gray-900 rounded-lg shadow-sm border-l-4 border-indigo-500">
                                <h4 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mb-3">Resumo Executivo</h4>
-                               <p className="text-gray-700 dark:text-gray-300">{data.executiveSummary}</p>
+                               <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{data.executiveSummary}</p>
                            </div>
+                           
+                           {data.businessImpact && (
+                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                   <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                                       <h5 className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase mb-2">Eficiência de Capital</h5>
+                                       <p className="text-xs text-gray-700 dark:text-gray-300">{data.businessImpact.capitalEfficiency || 'N/A'}</p>
+                                   </div>
+                                   <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800">
+                                       <h5 className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase mb-2">Risco Reputacional</h5>
+                                       <p className="text-xs text-gray-700 dark:text-gray-300">{data.businessImpact.reputationalRisk || 'N/A'}</p>
+                                   </div>
+                                   <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                                       <h5 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase mb-2">Resiliência Operacional</h5>
+                                       <p className="text-xs text-gray-700 dark:text-gray-300">{data.businessImpact.operationalResilience || 'N/A'}</p>
+                                   </div>
+                               </div>
+                           )}
+
                            <div className="p-6 bg-white dark:bg-gray-900 rounded-lg shadow-sm">
                                <h4 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mb-3">O Cenário Regulatório e Seus Desafios</h4>
-                               <p className="text-gray-700 dark:text-gray-300">{data.regulatoryChallenges}</p>
+                               <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{data.regulatoryChallenges}</p>
                            </div>
+                           
                            <div>
-                                <h4 className="text-xl text-center font-bold text-gray-800 dark:text-white mb-4">Framework Estratégico de Impacto</h4>
+                                <h4 className="text-xl text-center font-bold text-gray-800 dark:text-white mb-6">Framework Estratégico de Impacto</h4>
                                 <StrategicFrameworkDiagram framework={data.strategicFramework} />
                            </div>
+
                             <div className="p-6 bg-white dark:bg-gray-900 rounded-lg shadow-sm">
                                <h4 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mb-3">Nossa Solução e Parceria Estratégica</h4>
-                               <p className="text-gray-700 dark:text-gray-300">{data.ourSolution}</p>
+                               <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{data.ourSolution}</p>
                            </div>
+
                             <div className="p-6 bg-white dark:bg-gray-900 rounded-lg shadow-sm">
                                <h4 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mb-3">Próximos Passos Sugeridos</h4>
-                               <ul className="space-y-2">
+                               <ul className="space-y-3">
                                     {data.nextSteps.map((step, index) => (
-                                        <li key={index} className="flex items-center text-gray-700 dark:text-gray-300">
-                                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900 mr-3">
-                                                <svg className="h-4 w-4 text-indigo-600 dark:text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                                        <li key={index} className="flex items-start text-gray-700 dark:text-gray-300">
+                                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900 mr-3 mt-0.5 flex-shrink-0">
+                                                <svg className="h-3 w-3 text-indigo-600 dark:text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
                                             </span>
-                                            {step}
+                                            <span className="text-sm">{step}</span>
                                         </li>
                                     ))}
                                </ul>

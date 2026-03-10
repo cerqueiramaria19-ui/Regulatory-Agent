@@ -1,6 +1,5 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-// FIX: Corrected import paths to be relative
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
 import { ProcessingView } from './components/ProcessingView';
@@ -13,26 +12,20 @@ import { analyzeDocument } from './services/geminiService';
 import { getAnalysisHistory, saveAnalysisResult, deleteAnalysisResult, updateAnalysisResult } from './services/localStorageService';
 import { calculateFileHash } from './services/fileHashingService';
 
-
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [appView, setAppView] = useState<AppView>(AppView.UPLOAD);
-  // FIX: Lazily initialize history state from localStorage to ensure persistence on refresh.
-  // This function runs only once on the initial component load.
   const [history, setHistory] = useState<SavedAnalysis[]>(() => getAnalysisHistory());
   const [currentAnalysis, setCurrentAnalysis] = useState<SavedAnalysis | null>(null);
   const [currentComparisonGroup, setCurrentComparisonGroup] = useState<SavedAnalysis[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingFileName, setProcessingFileName] = useState<string>('');
   
-  // On initial load, set the correct view based on whether history exists.
   useEffect(() => {
-    // The history state is now initialized directly from localStorage above.
-    // This effect now only sets the initial view.
-    if (history.length > 0) {
+    if (history.length > 0 && appView === AppView.UPLOAD) {
         setAppView(AppView.HISTORY);
     }
-  }, []); // Runs only once on mount.
+  }, [history.length]);
 
   const handleLogin = (user: string, pass: string): boolean => {
     if (user === 'bipfs' && pass === 'maria123') {
@@ -48,7 +41,7 @@ const App: React.FC = () => {
 
   const handleFileUpload = useCallback(async (file: File, instructions: string) => {
     if (file.size === 0) {
-      setError('O arquivo selecionado está vazio e não pode ser analisado.');
+      setError('O arquivo selecionado está vazio.');
       setAppView(AppView.ERROR);
       return;
     }
@@ -66,21 +59,19 @@ const App: React.FC = () => {
           analyzedAt: new Date().toLocaleString(),
           fileHash: hash,
       };
-      // Save the new analysis to localStorage and update the state.
       const updatedHistory = saveAnalysisResult(newAnalysis);
       setHistory(updatedHistory);
       setCurrentAnalysis(newAnalysis);
       setAppView(AppView.DASHBOARD);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
-      setError(`Falha ao analisar o documento. ${errorMessage}. Por favor, tente novamente.`);
+      const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro inesperatedo na comunicação com o servidor de IA.';
+      setError(`Erro na Análise: ${errorMessage}`);
       console.error(err);
       setAppView(AppView.ERROR);
     }
   }, []);
 
   const handleNavigateHome = useCallback(() => {
-    // When navigating home, always go to the history view if it's not empty.
     setAppView(history.length > 0 ? AppView.HISTORY : AppView.UPLOAD);
     setCurrentAnalysis(null);
     setCurrentComparisonGroup(null);
@@ -100,13 +91,11 @@ const App: React.FC = () => {
   }, [history]);
   
   const handleDeleteAnalysis = useCallback((id: number) => {
-      // Delete from localStorage and update the state.
       const updatedHistory = deleteAnalysisResult(id);
       setHistory(updatedHistory);
   }, []);
 
   const handleAnalysisUpdate = useCallback((updatedAnalysis: SavedAnalysis) => {
-    // Update in localStorage and update the state.
     const updatedHistory = updateAnalysisResult(updatedAnalysis);
     setHistory(updatedHistory);
     setCurrentAnalysis(updatedAnalysis);
@@ -117,12 +106,7 @@ const App: React.FC = () => {
     setAppView(AppView.COMPARISON);
   }, []);
 
-
   const renderContent = () => {
-    // Render nothing until the view is determined by useEffect, to avoid flashing content.
-    if (!appView && isAuthenticated) {
-        return null;
-    }
     switch (appView) {
       case AppView.HISTORY:
         return <HistoryView 
@@ -141,19 +125,22 @@ const App: React.FC = () => {
       case AppView.PROCESSING:
         return <ProcessingView fileName={processingFileName} />;
       case AppView.DASHBOARD:
-        return currentAnalysis ? <Dashboard analysis={currentAnalysis} onUpdate={handleAnalysisUpdate} /> : <p>Nenhum resultado de análise encontrado.</p>;
+        return currentAnalysis ? <Dashboard analysis={currentAnalysis} onUpdate={handleAnalysisUpdate} /> : <p>Análise não encontrada.</p>;
       case AppView.COMPARISON:
-        return currentComparisonGroup ? <ProvaRealView analyses={currentComparisonGroup} /> : <p>Nenhum grupo de comparação encontrado.</p>;
+        return currentComparisonGroup ? <ProvaRealView analyses={currentComparisonGroup} /> : <p>Grupo não encontrado.</p>;
       case AppView.ERROR:
         return (
-          <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-            <h2 className="text-2xl font-bold text-red-500 mb-4">Ocorreu um Erro</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">{error}</p>
+          <div className="max-w-xl mx-auto text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-t-4 border-red-500">
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Falha no Processamento</h2>
+            <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded mb-6 text-left">
+                <p className="text-gray-700 dark:text-gray-300 text-sm font-mono whitespace-pre-wrap">{error}</p>
+            </div>
+            <p className="text-gray-500 mb-6 text-sm">Verifique sua conexão e se o arquivo não está protegido por senha ou corrompido.</p>
             <button
-              onClick={handleNavigateHome}
+              onClick={handleNavigateToUpload}
               className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
             >
-              Voltar ao Histórico
+              Tentar Novamente
             </button>
           </div>
         );

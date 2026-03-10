@@ -21,3 +21,16 @@ export const STATUS_COLORS: { [key in Status]: { bg: string; text: string } } = 
     [Status.COMPLETED]: { bg: 'bg-green-200 dark:bg-green-800', text: 'text-green-800 dark:text-green-200' },
     [Status.NA]: { bg: 'bg-slate-200 dark:bg-slate-700', text: 'text-slate-800 dark:text-slate-200' },
 };
+
+export const HORIZON_LABELS: { [key: string]: string } = {
+    "Immediate": "Imediato",
+    "Structural": "Estrutural",
+    "Innovation": "Inovação",
+};
+
+export const PILLAR_COLORS: { [key: string]: string } = {
+    "governance": "#3b82f6", // blue-500
+    "operations": "#8b5cf6", // purple-500
+    "technology": "#10b981", // emerald-500
+    "risk": "#f59e0b",       // amber-500
+};

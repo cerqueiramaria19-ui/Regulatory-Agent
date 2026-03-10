@@ -38,11 +38,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
     onUpdate({ ...analysis, requirements: updatedRequirements });
   };
 
-  const handleGenerateProposition = async () => {
+  const handleGenerateProposition = async (force: boolean = false) => {
     setIsPropositionModalOpen(true);
     
-    // If a proposition already exists, show it immediately without calling the API.
-    if (analysis.valueProposition) {
+    // If a proposition already exists and not forcing, show it immediately without calling the API.
+    if (analysis.valueProposition && !force) {
         setPropositionData(analysis.valueProposition);
         setIsGeneratingProposition(false);
         setPropositionError(null);
@@ -210,6 +210,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
        <ValuePropositionModal
         isOpen={isPropositionModalOpen}
         onClose={() => setIsPropositionModalOpen(false)}
+        onRegenerate={() => handleGenerateProposition(true)}
         isLoading={isGeneratingProposition}
         data={propositionData}
         error={propositionError}

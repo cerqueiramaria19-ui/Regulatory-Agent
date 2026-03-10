@@ -1,5 +1,5 @@
 {
-  "name": "Copy of Intelligent Regulatory Analysis",
+  "name": "marIA Regulatória",
   "description": "An intelligent web application that receives regulatory files, automatically extracts and processes requirements, generates structured analysis with a compliance score, and allows for manual review and validation of the extracted data.",
   "requestFramePermissions": []
 }
