@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData, RegulatoryChecklistData } from '../types';
+import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData, RegulatoryChecklistData, ServiceBrainstormData } from '../types';
 
 // Helper function to convert file to a Part object for the Gemini API
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string; }; } | { text: string; }> => {
@@ -104,9 +104,19 @@ const analysisSchema = {
                 },
                 required: ["mention", "pageNumber", "context"]
             }
+        },
+        bipServiceScores: {
+            type: Type.OBJECT,
+            properties: {
+                S1: { type: Type.NUMBER, description: "Score (0-100) para Estratégia e Transformação Digital" },
+                S2: { type: Type.NUMBER, description: "Score (0-100) para Adequação Regulatória e Evolução do Ecossistema" },
+                S3: { type: Type.NUMBER, description: "Score (0-100) para Infraestrutura e Capacidades Digitais" },
+                S4: { type: Type.NUMBER, description: "Score (0-100) para Eficiência Operacional e Inteligência" }
+            },
+            required: ["S1", "S2", "S3", "S4"]
         }
     },
-    required: ["summary", "complianceScore", "requirements", "discrepancies", "fundingAgentMentions"]
+    required: ["summary", "complianceScore", "requirements", "discrepancies", "fundingAgentMentions", "bipServiceScores"]
 };
 
 export const analyzeDocument = async (file: File, instructions: string): Promise<AnalysisResult> => {
@@ -118,7 +128,14 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
         ? `\n\nFoco especial solicitado pelo usuário: "${instructions}".`
         : '';
 
-    const basePrompt = `Analise o documento regulatório anexo e extraia os requisitos, discrepâncias e menções a agentes financiadores. 
+    const basePrompt = `Analise o documento regulatório anexo e extraia os requisitos, discrepâncias, menções a agentes financiadores e calcule o Fit Score para os serviços da BIP. 
+    
+    CÁLCULO DO BIP SERVICE SCORE (0-100):
+    - S1 (Estratégia e Transformação Digital): Impacto em inovação, novos modelos de negócio, governança corporativa e visão de futuro.
+    - S2 (Adequação Regulatória): Impacto em compliance, jurídico, riscos prudenciais e normas do BACEN/CVM.
+    - S3 (Infraestrutura e Capacidades Digitais): Impacto em TI, segurança da informação, dados, APIs e nuvem.
+    - S4 (Eficiência Operacional e Inteligência): Impacto em processos internos, back-office, automação e gestão de custos.
+    
     Retorne a resposta EXATAMENTE no formato JSON conforme o esquema definido.${instructionText}
     Importante: Todos os requisitos devem ter status inicial como '${Status.NOT_STARTED}'.`;
 
@@ -214,33 +231,44 @@ const regulatoryChecklistSchema = {
     required: ["title", "description", "items"]
 };
 
+const serviceBrainstormSchema = {
+    type: Type.OBJECT,
+    properties: {
+        sections: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING },
+                    pillarType: { type: Type.STRING, enum: ["governance", "operations", "technology", "risk"] },
+                    ideas: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ["title", "pillarType", "ideas"]
+            }
+        }
+    },
+    required: ["sections"]
+};
+
 export const generateRegulatoryChecklist = async (analysis: SavedAnalysis): Promise<RegulatoryChecklistData> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Você é um Consultor Estratégico Sênior da BIP especialista em Técnicas de Clarificação. 
-    Sua missão é criar um "Diagnóstico de Clarificação Estratégica" baseado na análise técnica do documento ${analysis.fileName}.
+    const prompt = `Você é um Consultor de Operações e Riscos Bancários da BIP, especialista em implementação de normas do BACEN e CVM.
+    Sua missão é criar um "Diagnóstico de Prontidão Operacional" baseado na análise técnica do documento ${analysis.fileName}.
     
-    OBJETIVO: Este checklist utiliza a TÉCNICA DE CLARIFICAÇÃO para desvendar a real situação do cliente. O objetivo não é apenas perguntar se eles têm algo, mas ajudar o cliente a clarificar seus próprios processos e desvendar problemas ocultos.
-    
-    TÉCNICA DE CLARIFICAÇÃO:
-    - Peça detalhes específicos ("Como isso funciona na prática hoje?").
-    - Peça exemplos ("Pode me dar um exemplo de quando esse controle falhou?").
-    - Questione a definição ("O que a instituição entende por 'linhagem automatizada' neste contexto?").
-    - Explore o 'porquê' e o 'como' para chegar na raiz do gap.
+    OBJETIVO: Transformar a norma em verificações PRÁTICAS e OPERACIONAIS. O cliente precisa saber exatamente O QUE verificar nos seus sistemas, processos e controles internos.
     
     RESUMO TÉCNICO: ${analysis.summary}
     REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 25))}
     
     DIRETRIZES PARA OS ITENS (Gere EXATAMENTE 10 itens):
-    1. REQUIREMENT: O pilar estratégico ou requisito crítico.
-    2. DESCRIPTION: Formule uma "Pergunta de Clarificação Estratégica". 
-       - EVITE: Perguntas binárias (Sim/Não) ou superficiais.
-       - PREFIRA: "Ao olharmos para o requisito de [X], como vocês garantem que a informação flui sem perdas entre as áreas? Onde exatamente vocês sentem que a comunicação ou o dado se perde?" ou "Poderia me detalhar como é feita a validação desse reporte hoje? Qual o nível de intervenção manual que ainda existe?"
-    3. IMPACT: O problema real que a clarificação ajuda a expor (ex: "Inconsistência latente entre silos de dados e risco de reporte falho").
-    4. CRITICALITY: Marque como isCritical: true se for um ponto onde a falta de clareza gera alto risco.
+    1. REQUIREMENT: O ponto focal da norma (ex: "Segregação de Funções no Pix").
+    2. DESCRIPTION: Uma verificação técnica direta. 
+       - USE: "Verificar se o sistema [X] possui logs de auditoria para a ação [Y] conforme a circular [Z]" ou "Validar se a conciliação entre o sistema legado e o reporte regulatório ocorre em D+0".
+       - EVITE: Perguntas genéricas ou teóricas. Foque em "O que testar".
+    3. IMPACT: O risco operacional real (ex: "Risco de fraude por colusão ou erro de liquidação não detectado").
+    4. CRITICALITY: Marque como isCritical: true se for um ponto de falha que gera multa imediata ou interrupção de serviço.
     
-    O tom deve ser investigativo, inteligente e focado em desvendar a realidade operacional para propor a melhor solução de consultoria.
-    
-    Retorne um JSON seguindo estritamente o esquema fornecido.`;
+    O tom deve ser técnico, preciso e focado em auditoria/implementação operacional.`;
 
     try {
         const response = await ai.models.generateContent({
@@ -261,34 +289,31 @@ export const generateRegulatoryChecklist = async (analysis: SavedAnalysis): Prom
 
 export const generateValueProposition = async (analysis: SavedAnalysis): Promise<ValuePropositionData> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Você é um Consultor Sênior de Estratégia e Compliance Bancário da BIP (Business Integration Partners). 
-    Sua missão é transformar uma análise técnica regulatória em um Business Case de alto nível para o Board/Diretoria de uma Instituição Financeira de grande porte.
+    const prompt = `Você é um Consultor Sênior de Estratégia e Operações Bancárias da BIP. 
+    Sua missão é transformar uma análise técnica em um Plano de Ação Estratégico e Operacional para a Diretoria.
 
-    CONTEXTO DO CLIENTE: Banco ou Instituição Financeira sob supervisão do BACEN/CVM.
-    DOCUMENTO ANALISADO: ${analysis.fileName}
-    RESUMO TÉCNICO: ${analysis.summary}
-    REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 20))}
+    CONTEXTO: Instituição Financeira (IF) com sistemas legados, silos de dados e pressão regulatória.
+    DOCUMENTO: ${analysis.fileName}
+    REQUISITOS: ${JSON.stringify(analysis.requirements.slice(0, 20))}
 
-    ESTRUTURA DA RESPOSTA (PADRÃO EXECUTIVO BIP):
-    1. EXECUTIVE SUMMARY: Visão holística do impacto na estratégia do banco.
-    2. REGULATORY CHALLENGES: Desafios de compliance, multas e adequação.
+    ESTRUTURA DA RESPOSTA:
+    1. EXECUTIVE SUMMARY: Impacto direto no P&L e na licença de operação.
+    2. REGULATORY CHALLENGES: Foco em multas pecuniárias e sanções administrativas do BACEN.
     3. BUSINESS IMPACT: 
-       - Capital Efficiency: Impacto em Basileia, provisões e custos de capital.
-       - Reputational Risk: Confiança do mercado e rating.
-       - Operational Resilience: Continuidade de negócios e sistemas.
+       - Capital Efficiency: Impacto em RWA (Risk Weighted Assets) e capital regulatório.
+       - Reputational Risk: Impacto no Score de Supervisão (SRC) e imagem perante investidores.
+       - Operational Resilience: Robustez de sistemas críticos e planos de contingência.
     4. STRATEGIC FRAMEWORK (4 PILARES): Governança, Operações, Tecnologia e Risco.
-       - Para CADA pilar, você DEVE gerar EXATAMENTE 5 desafios técnicos/críticos.
-       - Para CADA pilar, você DEVE gerar EXATAMENTE 5 recomendações estratégicas.
-       - Para CADA pilar, crie um Roadmap com horizontes: Imediato, Estrutural e Inovação.
-    5. OUR SOLUTION: Como a BIP ajuda na implementação (Consultoria, PMO, Tecnologia).
-    6. NEXT STEPS: Lista de ações imediatas.
+       - Desafios: Devem ser OPERACIONAIS (ex: "Falta de linhagem de dados entre o Core Banking e o motor de risco").
+       - Recomendações: Devem ser AÇÕES CONCRETAS (ex: "Implementar barramento de integração para reporte automático").
+       - Roadmap: Imediato (Quick Wins), Estrutural (Processos), Inovação (Diferencial).
+    5. OUR SOLUTION: Metodologia BIP de implementação (Diagnóstico -> Desenho -> Sustentação).
+    6. NEXT STEPS: Ações práticas para os próximos 30 dias.
 
     DIRETRIZES:
-    - Use linguagem de C-Level (ex: 'Risk Appetite', 'Prudential Supervision', 'Operational Alpha').
-    - Seja específico sobre os desafios técnicos (ex: 'Interoperabilidade de APIs legadas', 'Granularidade de dados para reporte').
-    - Garanta que o JSON siga estritamente o esquema fornecido, preenchendo todos os campos do businessImpact e strategicFramework.
-
-    Retorne um JSON robusto e completo.`;
+    - Fuja do "corporativês" genérico. Seja pragmático.
+    - Fale de processos reais: Conciliação, Reporte, KYC, AML, PLD, Basileia, Pix, Open Finance.
+    - Garanta que as recomendações sejam implementáveis por uma consultoria.`;
 
     try {
         const response = await ai.models.generateContent({
@@ -304,5 +329,42 @@ export const generateValueProposition = async (analysis: SavedAnalysis): Promise
     } catch (error: any) {
         console.error("Erro Proposta Valor:", error);
         throw new Error("Falha ao gerar a narrativa estratégica de negócio para o setor bancário.");
+    }
+};
+
+export const generateServiceBrainstorm = async (analysis: SavedAnalysis): Promise<ServiceBrainstormData> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Você é um Consultor de Ofertas e Soluções da BIP. 
+    Sua missão é criar um "Catálogo de Soluções Pragmáticas" para o documento ${analysis.fileName}.
+    
+    OBJETIVO: Propor serviços de consultoria que resolvam problemas REAIS de operação bancária.
+    
+    ÁREAS (Gere 5 ideias para cada):
+    1. Estratégia e Transformação (governance): PMO de implementação, Revisão de Modelos de Negócio.
+    2. Adequação e Risco (risk): Auditoria de Processos, Saneamento de Dados Regulatórios.
+    3. Infraestrutura e Digital (technology): Modernização de Legado, Arquitetura de APIs.
+    4. Eficiência e Inteligência (operations): Automação de Back-office (RPA), Redesenho de Jornadas.
+    
+    DIRETRIZES:
+    - As ideias devem ser PRODUTOS de consultoria (ex: "Squad de Saneamento de Dados para Resolução 4.966").
+    - Foque em dor operacional: "Redução de intervenção manual em reportes", "Mitigação de erros de KYC".
+    - Use o contexto brasileiro (BACEN, CVM, SELIC, PIX).
+    
+    Retorne um JSON seguindo o esquema.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-3.1-pro-preview",
+            contents: [{ parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: serviceBrainstormSchema,
+            }
+        });
+
+        return JSON.parse(response.text || '{}') as ServiceBrainstormData;
+    } catch (error: any) {
+        console.error("Erro Brainstorming:", error);
+        throw new Error("Falha ao gerar o brainstorming de serviços.");
     }
 };

@@ -61,6 +61,9 @@ export interface AnalysisResult {
   requirements: Requirement[];
   discrepancies: Discrepancy[];
   fundingAgentMentions: FundingAgentMention[];
+  bipServiceScores: {
+    [serviceId: string]: number;
+  };
 }
 
 export interface StrategicFrameworkArea {
@@ -101,11 +104,23 @@ export interface RegulatoryChecklistData {
   items: ChecklistItem[];
 }
 
+export interface BrainstormSection {
+  title: string;
+  pillarType: 'governance' | 'operations' | 'technology' | 'risk';
+  ideas: string[];
+}
+
+export interface ServiceBrainstormData {
+  sections: BrainstormSection[];
+}
+
 export interface SavedAnalysis extends AnalysisResult {
     id: number;
     fileName: string;
     analyzedAt: string;
     fileHash: string;
+    fileData?: string; // Base64 string of the original file
     valueProposition?: ValuePropositionData;
     regulatoryChecklist?: RegulatoryChecklistData;
+    serviceBrainstorm?: ServiceBrainstormData;
 }

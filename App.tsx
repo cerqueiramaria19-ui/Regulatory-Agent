@@ -51,6 +51,14 @@ const App: React.FC = () => {
     setProcessingFileName(file.name);
     try {
       const hash = await calculateFileHash(file);
+      
+      // Read file as base64 to store it
+      const fileData = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+
       const result = await analyzeDocument(file, instructions);
       const newAnalysis: SavedAnalysis = {
           ...result,
@@ -58,6 +66,7 @@ const App: React.FC = () => {
           fileName: file.name,
           analyzedAt: new Date().toLocaleString(),
           fileHash: hash,
+          fileData: fileData,
       };
       const updatedHistory = saveAnalysisResult(newAnalysis);
       setHistory(updatedHistory);

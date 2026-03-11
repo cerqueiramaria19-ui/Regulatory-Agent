@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { SavedAnalysis, Requirement } from '../types';
 import { StarRating } from './StarRating';
-import { AreaPieChart } from './AreaPieChart';
-import { PriorityPieChart } from './PriorityPieChart';
-import { FileTextIcon, ClipboardListIcon, StarIcon } from './Icons';
+import { FileTextIcon, ClipboardListIcon, StarIcon, ShieldIcon, ZapIcon, BarChartIcon } from './Icons';
+import { StrategicHeatmap } from './StrategicHeatmap';
+import { BusinessImpactRadar } from './BusinessImpactRadar';
 
 interface AggregateDashboardProps {
   history: SavedAnalysis[];
@@ -13,69 +13,156 @@ interface StatCardProps {
     title: string;
     value: string | number;
     icon: React.ReactNode;
-    footer?: React.ReactNode;
+    subtitle?: string;
+    trend?: {
+        value: string;
+        isPositive: boolean;
+    };
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, footer }) => (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md flex flex-col justify-between">
-        <div>
-            <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{title}</p>
-                <div className="text-gray-400 dark:text-gray-500">{icon}</div>
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon, subtitle, trend }) => (
+    <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+        <div className="flex items-start justify-between">
+            <div>
+                <p className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">{title}</p>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">{value}</h3>
+                {subtitle && <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 font-medium">{subtitle}</p>}
             </div>
-            <div className="mt-1">
-                <h3 className="text-3xl font-semibold text-gray-900 dark:text-white">{value}</h3>
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400">
+                {icon}
             </div>
         </div>
-        {footer && <div className="mt-4">{footer}</div>}
+        {trend && (
+            <div className="mt-3 flex items-center gap-1">
+                <span className={`text-[10px] font-bold ${trend.isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {trend.isPositive ? '↑' : '↓'} {trend.value}
+                </span>
+                <span className="text-[10px] text-gray-400 font-medium">vs. período anterior</span>
+            </div>
+        )}
     </div>
 );
 
-
 export const AggregateDashboard: React.FC<AggregateDashboardProps> = ({ history }) => {
   if (history.length === 0) {
-    return null; // Don't show the dashboard if there's no history
+    return null;
   }
 
-  const totalAnalyses = history.length;
-  const averageScore = history.reduce((sum, analysis) => sum + analysis.complianceScore, 0) / totalAnalyses;
-  const allRequirements: Requirement[] = history.flatMap(analysis => analysis.requirements);
-  const totalRequirements = allRequirements.length;
+  const stats = useMemo(() => {
+    const totalAnalyses = history.length;
+    const averageScore = history.reduce((sum, analysis) => sum + analysis.complianceScore, 0) / totalAnalyses;
+    const allRequirements: Requirement[] = history.flatMap(analysis => analysis.requirements);
+    const totalRequirements = allRequirements.length;
+    
+    const requirementsWithEvidence = allRequirements.filter(r => r.textualEvidence && r.textualEvidence.length > 10).length;
+    const traceabilityRate = totalRequirements > 0 ? (requirementsWithEvidence / totalRequirements) * 100 : 0;
+
+    // Radar Data Calculation
+    const radarDimensions = [
+        { subject: 'Eficiência de Capital', area: 'Financeiro e Riscos' },
+        { subject: 'Risco Reputacional', area: 'Jurídico e Compliance' },
+        { subject: 'Exp. do Cliente', area: 'Operacional' },
+        { subject: 'Agilidade Reg.', area: 'Governança e Gestão' },
+        { subject: 'Estabilidade Sist.', area: 'Segurança da Informação' },
+        { subject: 'Inovação Prod.', area: 'Tecnologia e Dados' }
+    ];
+
+    const getStatusScore = (status: string): number => {
+        const s = status.toLowerCase();
+        if (s.includes('conforme') && !s.includes('não') && !s.includes('parcialmente')) return 5;
+        if (s.includes('parcialmente')) return 3;
+        if (s.includes('não conforme')) return 1;
+        return 0;
+    };
+
+    const radarData = radarDimensions.map(dim => {
+        const dimReqs = allRequirements.filter(r => r.area === dim.area);
+        const score = dimReqs.length > 0 
+            ? dimReqs.reduce((sum, r) => sum + getStatusScore(r.status), 0) / dimReqs.length 
+            : 3.5; // Default/Neutral if no data
+        return { subject: dim.subject, A: score, fullMark: 5 };
+    });
+
+    return {
+        totalAnalyses,
+        averageScore,
+        totalRequirements,
+        traceabilityRate,
+        radarData
+    };
+  }, [history]);
 
   return (
-    <div className="mb-8">
-      <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Dashboard Geral</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="mb-12">
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Inteligência Regulatória Estratégica</h2>
+            <p className="text-gray-500 dark:text-gray-400 mt-1 font-medium">Visão consolidada do portfólio de conformidade e prontidão executiva.</p>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-full border border-indigo-100 dark:border-indigo-800">
+              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse"></div>
+              <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-widest">Live Portfolio Analysis</span>
+          </div>
+      </div>
+
+      {/* KPI Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         <StatCard 
-            title="Documentos Analisados" 
-            value={totalAnalyses} 
-            icon={<FileTextIcon className="w-6 h-6"/>} 
+            title="Normas Analisadas" 
+            value={stats.totalAnalyses} 
+            subtitle="Documentos processados"
+            icon={<FileTextIcon className="w-5 h-5"/>} 
         />
         <StatCard 
-            title="Total de Requisitos" 
-            value={totalRequirements} 
-            icon={<ClipboardListIcon className="w-6 h-6" />} 
+            title="Requisitos Mapeados" 
+            value={stats.totalRequirements.toLocaleString()} 
+            subtitle="Pontos de controle identificados"
+            icon={<ClipboardListIcon className="w-5 h-5" />} 
         />
         <StatCard 
-            title="Média de Score" 
-            value={averageScore.toFixed(1)} 
-            icon={<StarIcon className="w-6 h-6" filled/>} 
-            footer={<StarRating score={averageScore} />}
+            title="Score de Confiança" 
+            value={`${stats.averageScore.toFixed(1)}/5.0`} 
+            subtitle="Média de conformidade global"
+            icon={<StarIcon className="w-5 h-5" filled/>} 
+        />
+        <StatCard 
+            title="Taxa de Rastreabilidade" 
+            value={`${stats.traceabilityRate.toFixed(0)}%`} 
+            subtitle="Requisitos com evidência direta"
+            icon={<ShieldIcon className="w-5 h-5" />} 
         />
       </div>
       
-      {allRequirements.length > 0 && (
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Distribuição Geral por Área</h3>
-            <AreaPieChart data={allRequirements} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Heatmap Section */}
+          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Matriz de Calor Estratégica</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Distribuição de conformidade por temas transversais da BIP.</p>
+                </div>
+                <ZapIcon className="w-5 h-5 text-amber-400" />
             </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Distribuição Geral por Prioridade</h3>
-            <PriorityPieChart data={allRequirements} />
+            <StrategicHeatmap history={history} />
+          </div>
+
+          {/* Radar Section */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Impacto no Business</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Dimensões críticas para Instituições Financeiras.</p>
+                </div>
+                <BarChartIcon className="w-5 h-5 text-indigo-500" />
             </div>
-        </div>
-      )}
+            <BusinessImpactRadar data={stats.radarData} />
+            <div className="mt-4 pt-4 border-t border-gray-50 dark:border-gray-700">
+                <p className="text-[10px] text-gray-400 font-medium text-center italic">
+                    Análise baseada em correlação normativa e impacto setorial.
+                </p>
+            </div>
+          </div>
+      </div>
     </div>
   );
 };
