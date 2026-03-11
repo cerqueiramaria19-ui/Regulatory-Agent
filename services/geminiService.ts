@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData } from '../types';
+import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData, RegulatoryChecklistData } from '../types';
 
 // Helper function to convert file to a Part object for the Gemini API
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string; }; } | { text: string; }> => {
@@ -191,29 +191,108 @@ const valuePropositionSchema = {
     required: ["executiveSummary", "regulatoryChallenges", "strategicFramework", "businessImpact", "ourSolution", "nextSteps"]
 };
 
-export const generateValueProposition = async (analysis: SavedAnalysis): Promise<ValuePropositionData> => {
+const regulatoryChecklistSchema = {
+    type: Type.OBJECT,
+    properties: {
+        title: { type: Type.STRING },
+        description: { type: Type.STRING },
+        items: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING },
+                    requirement: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    impact: { type: Type.STRING },
+                    isCritical: { type: Type.BOOLEAN }
+                },
+                required: ["id", "requirement", "description", "impact", "isCritical"]
+            }
+        }
+    },
+    required: ["title", "description", "items"]
+};
+
+export const generateRegulatoryChecklist = async (analysis: SavedAnalysis): Promise<RegulatoryChecklistData> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Você é um Consultor Sênior de Estratégia e Compliance Bancário da BIP. 
-    Sua missão é transformar uma análise técnica regulatória em um Business Case de alto nível para o Board de uma Instituição Financeira.
-
-    CONTEXTO DO CLIENTE: Banco/Instituição Financeira de grande porte.
-    DOCUMENTO ANALISADO: ${analysis.fileName}
+    const prompt = `Você é um Consultor Estratégico Sênior da BIP especialista em Técnicas de Clarificação. 
+    Sua missão é criar um "Diagnóstico de Clarificação Estratégica" baseado na análise técnica do documento ${analysis.fileName}.
+    
+    OBJETIVO: Este checklist utiliza a TÉCNICA DE CLARIFICAÇÃO para desvendar a real situação do cliente. O objetivo não é apenas perguntar se eles têm algo, mas ajudar o cliente a clarificar seus próprios processos e desvendar problemas ocultos.
+    
+    TÉCNICA DE CLARIFICAÇÃO:
+    - Peça detalhes específicos ("Como isso funciona na prática hoje?").
+    - Peça exemplos ("Pode me dar um exemplo de quando esse controle falhou?").
+    - Questione a definição ("O que a instituição entende por 'linhagem automatizada' neste contexto?").
+    - Explore o 'porquê' e o 'como' para chegar na raiz do gap.
+    
     RESUMO TÉCNICO: ${analysis.summary}
-    REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 15))}
-
-    DIRETRIZES PARA A ANÁLISE:
-    1. LINGUAGEM EXECUTIVA: Use termos como 'Appetite ao Risco', 'Supervisão Prudencial', 'Compliance by Design', 'KRI' e 'Basileia'.
-    2. IMPACTO EM CAPITAL: Analise como a norma afeta a eficiência de capital, provisões e custos regulatórios.
-    3. DESAFIOS TÉCNICOS: Foque em interoperabilidade com sistemas legados, granularidade de dados e reporte ao BACEN/CVM. Gere pelo menos 5 desafios críticos por pilar.
-    4. RECOMENDAÇÕES ESTRATÉGICAS: Forneça pelo menos 5 recomendações estratégicas de alto nível por pilar.
-    5. FRAMEWORK DE 4 PILARES: Divida a análise em Governança, Operações, Tecnologia e Risco.
-    6. ROADMAP ESTRATÉGICO: As recomendações táticas devem ser divididas em horizontes: Imediato (Quick Wins), Estrutural (Mudança de Processos) e Inovação (Vantagem Competitiva).
-
-    Retorne um JSON robusto seguindo estritamente o esquema fornecido.`;
+    REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 25))}
+    
+    DIRETRIZES PARA OS ITENS (Gere EXATAMENTE 10 itens):
+    1. REQUIREMENT: O pilar estratégico ou requisito crítico.
+    2. DESCRIPTION: Formule uma "Pergunta de Clarificação Estratégica". 
+       - EVITE: Perguntas binárias (Sim/Não) ou superficiais.
+       - PREFIRA: "Ao olharmos para o requisito de [X], como vocês garantem que a informação flui sem perdas entre as áreas? Onde exatamente vocês sentem que a comunicação ou o dado se perde?" ou "Poderia me detalhar como é feita a validação desse reporte hoje? Qual o nível de intervenção manual que ainda existe?"
+    3. IMPACT: O problema real que a clarificação ajuda a expor (ex: "Inconsistência latente entre silos de dados e risco de reporte falho").
+    4. CRITICALITY: Marque como isCritical: true se for um ponto onde a falta de clareza gera alto risco.
+    
+    O tom deve ser investigativo, inteligente e focado em desvendar a realidade operacional para propor a melhor solução de consultoria.
+    
+    Retorne um JSON seguindo estritamente o esquema fornecido.`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: "gemini-3.1-pro-preview",
+            contents: [{ parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: regulatoryChecklistSchema,
+            }
+        });
+
+        return JSON.parse(response.text || '{}') as RegulatoryChecklistData;
+    } catch (error: any) {
+        console.error("Erro Checklist Regulatório:", error);
+        throw new Error("Falha ao gerar o diagnóstico de clarificação.");
+    }
+};
+
+export const generateValueProposition = async (analysis: SavedAnalysis): Promise<ValuePropositionData> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Você é um Consultor Sênior de Estratégia e Compliance Bancário da BIP (Business Integration Partners). 
+    Sua missão é transformar uma análise técnica regulatória em um Business Case de alto nível para o Board/Diretoria de uma Instituição Financeira de grande porte.
+
+    CONTEXTO DO CLIENTE: Banco ou Instituição Financeira sob supervisão do BACEN/CVM.
+    DOCUMENTO ANALISADO: ${analysis.fileName}
+    RESUMO TÉCNICO: ${analysis.summary}
+    REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 20))}
+
+    ESTRUTURA DA RESPOSTA (PADRÃO EXECUTIVO BIP):
+    1. EXECUTIVE SUMMARY: Visão holística do impacto na estratégia do banco.
+    2. REGULATORY CHALLENGES: Desafios de compliance, multas e adequação.
+    3. BUSINESS IMPACT: 
+       - Capital Efficiency: Impacto em Basileia, provisões e custos de capital.
+       - Reputational Risk: Confiança do mercado e rating.
+       - Operational Resilience: Continuidade de negócios e sistemas.
+    4. STRATEGIC FRAMEWORK (4 PILARES): Governança, Operações, Tecnologia e Risco.
+       - Para CADA pilar, você DEVE gerar EXATAMENTE 5 desafios técnicos/críticos.
+       - Para CADA pilar, você DEVE gerar EXATAMENTE 5 recomendações estratégicas.
+       - Para CADA pilar, crie um Roadmap com horizontes: Imediato, Estrutural e Inovação.
+    5. OUR SOLUTION: Como a BIP ajuda na implementação (Consultoria, PMO, Tecnologia).
+    6. NEXT STEPS: Lista de ações imediatas.
+
+    DIRETRIZES:
+    - Use linguagem de C-Level (ex: 'Risk Appetite', 'Prudential Supervision', 'Operational Alpha').
+    - Seja específico sobre os desafios técnicos (ex: 'Interoperabilidade de APIs legadas', 'Granularidade de dados para reporte').
+    - Garanta que o JSON siga estritamente o esquema fornecido, preenchendo todos os campos do businessImpact e strategicFramework.
+
+    Retorne um JSON robusto e completo.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-3.1-pro-preview",
             contents: [{ parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",

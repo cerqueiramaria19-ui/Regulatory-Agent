@@ -87,10 +87,25 @@ export interface ValuePropositionData {
   nextSteps: string[];
 }
 
+export interface ChecklistItem {
+  id: string;
+  requirement: string;
+  description: string;
+  impact: string;
+  isCritical: boolean;
+}
+
+export interface RegulatoryChecklistData {
+  title: string;
+  description: string;
+  items: ChecklistItem[];
+}
+
 export interface SavedAnalysis extends AnalysisResult {
     id: number;
     fileName: string;
     analyzedAt: string;
     fileHash: string;
     valueProposition?: ValuePropositionData;
+    regulatoryChecklist?: RegulatoryChecklistData;
 }
