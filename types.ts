@@ -114,6 +114,22 @@ export interface ServiceBrainstormData {
   sections: BrainstormSection[];
 }
 
+export interface GapAnalysisItem {
+  id: string;
+  regulatoryReference: string;
+  obligationSummary: string;
+  detailedActionPlan: string;
+  responsibleArea: string;
+  impactLevel: 'Crítico' | 'Alto' | 'Médio' | 'Baixo';
+  estimatedEffort: string;
+}
+
+export interface GapAnalysisData {
+  title: string;
+  description: string;
+  items: GapAnalysisItem[];
+}
+
 export interface SavedAnalysis extends AnalysisResult {
     id: number;
     fileName: string;
@@ -123,4 +139,5 @@ export interface SavedAnalysis extends AnalysisResult {
     valueProposition?: ValuePropositionData;
     regulatoryChecklist?: RegulatoryChecklistData;
     serviceBrainstorm?: ServiceBrainstormData;
+    gapAnalysis?: GapAnalysisData;
 }

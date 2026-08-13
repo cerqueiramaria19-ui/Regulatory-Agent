@@ -1,17 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { SavedAnalysis, Requirement, ValuePropositionData, RegulatoryChecklistData, ServiceBrainstormData } from '../types';
+import { SavedAnalysis, Requirement, ValuePropositionData, RegulatoryChecklistData, ServiceBrainstormData, GapAnalysisData } from '../types';
 import { StarRating } from './StarRating';
-import { AreaPieChart } from './AreaPieChart';
-import { PriorityPieChart } from './PriorityPieChart';
+import { ExecutiveReadinessThermometer } from './ExecutiveReadinessThermometer';
 import { RequirementsTable } from './RequirementsTable';
 import { DiscrepancyReport } from './DiscrepancyReport';
 import { FundingAgentReport } from './FundingAgentReport';
 import { ValuePropositionModal } from './ValuePropositionModal';
 import { RegulatoryChecklistModal } from './RegulatoryChecklistModal';
 import { ServiceBrainstormModal } from './ServiceBrainstormModal';
-import { generateValueProposition, generateRegulatoryChecklist, generateServiceBrainstorm } from '../services/geminiService';
-import { LightbulbIcon, SheetIcon, ClipboardListIcon, FileTextIcon, ZapIcon } from './Icons';
+import { GapAnalysisModal } from './GapAnalysisModal';
+import { generateValueProposition, generateRegulatoryChecklist, generateServiceBrainstorm, generateGapAnalysis } from '../services/geminiService';
+import { LightbulbIcon, SheetIcon, ClipboardListIcon, FileTextIcon, ZapIcon, FileDownIcon, ScaleIcon } from './Icons';
+import { generateAnalysisPDF } from '../services/pdfService';
 
 interface DashboardProps {
   analysis: SavedAnalysis;
@@ -35,7 +36,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
   const [brainstormError, setBrainstormError] = useState<string | null>(null);
   const [isGeneratingBrainstorm, setIsGeneratingBrainstorm] = useState(false);
 
+  const [isGapAnalysisModalOpen, setIsGapAnalysisModalOpen] = useState(false);
+  const [gapAnalysisData, setGapAnalysisData] = useState<GapAnalysisData | null>(null);
+  const [gapAnalysisError, setGapAnalysisError] = useState<string | null>(null);
+  const [isGeneratingGapAnalysis, setIsGeneratingGapAnalysis] = useState(false);
+
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   const isLegacyProposition = analysis.valueProposition && (
     !analysis.valueProposition.businessImpact?.capitalEfficiency ||
@@ -135,6 +142,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
     }
   };
 
+  const handleGenerateGapAnalysis = async (forceRegenerate = false) => {
+    setIsGapAnalysisModalOpen(true);
+
+    if (analysis.gapAnalysis && !forceRegenerate) {
+        setGapAnalysisData(analysis.gapAnalysis);
+        setIsGeneratingGapAnalysis(false);
+        setGapAnalysisError(null);
+        return;
+    }
+
+    setIsGeneratingGapAnalysis(true);
+    setGapAnalysisData(null);
+    setGapAnalysisError(null);
+    try {
+        const gapData = await generateGapAnalysis(analysis);
+        setGapAnalysisData(gapData);
+        onUpdate({ ...analysis, gapAnalysis: gapData });
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
+        setGapAnalysisError(`Falha ao gerar a análise de gaps. Erro: ${errorMessage}`);
+    } finally {
+        setIsGeneratingGapAnalysis(false);
+    }
+  };
+
   const handleExportAllToExcel = () => {
     if (!requirements || requirements.length === 0) {
         return;
@@ -193,6 +225,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
         console.error("Failed to export to Excel:", error);
     } finally {
         setIsExportingExcel(false);
+    }
+  };
+
+  const handleExportToPDF = async () => {
+    setIsExportingPDF(true);
+    try {
+        await generateAnalysisPDF(analysis, 'dashboard-charts-container');
+    } catch (error) {
+        console.error("Failed to export PDF:", error);
+        alert("Ocorreu um erro ao exportar o PDF do relatório. Detalhes no console.");
+    } finally {
+        setIsExportingPDF(false);
     }
   };
 
@@ -277,13 +321,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
                       Pool de Ideias
                     </button>
                    </div>
-                   <button 
-                    onClick={() => handleGenerateChecklist()}
-                    className="w-full md:w-auto inline-flex items-center px-4 py-2 border border-teal-200 text-sm font-medium rounded-md shadow-sm text-teal-700 bg-teal-50 hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
-                  >
-                    <ClipboardListIcon className="w-5 h-5 mr-2" />
-                    Checklist Regulatório
-                  </button>
+                   <div className="flex gap-2 w-full md:w-auto">
+                    <button 
+                     onClick={() => handleGenerateChecklist()}
+                     className="flex-1 md:w-auto inline-flex items-center px-4 py-2 border border-teal-200 text-sm font-medium rounded-md shadow-sm text-teal-700 bg-teal-50 hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+                    >
+                      <ClipboardListIcon className="w-5 h-5 mr-2" />
+                      Checklist Regulatório
+                    </button>
+                    <button 
+                     onClick={() => handleGenerateGapAnalysis()}
+                     className="flex-1 md:w-auto inline-flex items-center px-4 py-2 border border-indigo-200 text-sm font-medium rounded-md shadow-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                     title="Análise de Gaps com referências normativas (artigos, incisos) e detalhamento de adequação"
+                    >
+                      <ScaleIcon className="w-5 h-5 mr-2" />
+                      Gap Analysis
+                    </button>
+                   </div>
                   <div className="flex items-center gap-4 mt-1">
                       <span className="font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Score de Conformidade:</span>
                       <StarRating score={analysis.complianceScore} />
@@ -299,16 +353,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
           </div>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Requisitos por Área</h3>
-            <AreaPieChart data={requirements} />
-          </div>
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Requisitos por Prioridade</h3>
-            <PriorityPieChart data={requirements} />
-          </div>
+        {/* Executive Readiness Thermometer */}
+        <div id="dashboard-charts-container" className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+          <ExecutiveReadinessThermometer history={[analysis]} />
         </div>
         
         {/* Funding Agent Mentions */}
@@ -328,16 +375,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
         {/* Requirements Table */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-semibold">Plano de Ação e Requisitos</h3>
-            <button
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Plano de Ação e Requisitos</h3>
+            <div className="flex gap-3">
+              <button
+                onClick={handleExportToPDF}
+                disabled={isExportingPDF}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+                title="Exportar relatório completo em formato PDF com gráficos e dados"
+              >
+                  <FileDownIcon className="w-5 h-5 mr-2" />
+                  {isExportingPDF ? 'Gerando PDF...' : 'Exportar Relatório PDF'}
+              </button>
+              <button
                 onClick={handleExportAllToExcel}
                 disabled={isExportingExcel}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 transition-colors"
                 title="Exportar todos os requisitos para Excel (CSV)"
               >
                   <SheetIcon className="w-5 h-5 mr-2" />
                   {isExportingExcel ? 'Exportando...' : 'Exportar Tudo'}
               </button>
+            </div>
           </div>
           <RequirementsTable requirements={requirements} onUpdateRequirement={handleUpdateRequirement} />
         </div>
@@ -368,6 +426,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysis, onUpdate }) => {
         isLoading={isGeneratingBrainstorm}
         data={brainstormData}
         error={brainstormError}
+      />
+      <GapAnalysisModal
+        isOpen={isGapAnalysisModalOpen}
+        onClose={() => setIsGapAnalysisModalOpen(false)}
+        onRegenerate={() => handleGenerateGapAnalysis(true)}
+        isLoading={isGeneratingGapAnalysis}
+        data={gapAnalysisData}
+        error={gapAnalysisError}
+        fileName={analysis.fileName}
       />
     </>
   );

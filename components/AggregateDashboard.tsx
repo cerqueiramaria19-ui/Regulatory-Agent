@@ -1,9 +1,7 @@
 import React, { useMemo } from 'react';
 import { SavedAnalysis, Requirement } from '../types';
 import { StarRating } from './StarRating';
-import { FileTextIcon, ClipboardListIcon, StarIcon, ShieldIcon, ZapIcon, BarChartIcon } from './Icons';
-import { StrategicHeatmap } from './StrategicHeatmap';
-import { BusinessImpactRadar } from './BusinessImpactRadar';
+import { FileTextIcon, ClipboardListIcon, StarIcon, ShieldIcon } from './Icons';
 
 interface AggregateDashboardProps {
   history: SavedAnalysis[];
@@ -131,37 +129,6 @@ export const AggregateDashboard: React.FC<AggregateDashboardProps> = ({ history 
             subtitle="Requisitos com evidência direta"
             icon={<ShieldIcon className="w-5 h-5" />} 
         />
-      </div>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Heatmap Section */}
-          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Matriz de Calor Estratégica</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Distribuição de conformidade por temas transversais da BIP.</p>
-                </div>
-                <ZapIcon className="w-5 h-5 text-amber-400" />
-            </div>
-            <StrategicHeatmap history={history} />
-          </div>
-
-          {/* Radar Section */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Impacto no Business</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Dimensões críticas para Instituições Financeiras.</p>
-                </div>
-                <BarChartIcon className="w-5 h-5 text-indigo-500" />
-            </div>
-            <BusinessImpactRadar data={stats.radarData} />
-            <div className="mt-4 pt-4 border-t border-gray-50 dark:border-gray-700">
-                <p className="text-[10px] text-gray-400 font-medium text-center italic">
-                    Análise baseada em correlação normativa e impacto setorial.
-                </p>
-            </div>
-          </div>
       </div>
     </div>
   );

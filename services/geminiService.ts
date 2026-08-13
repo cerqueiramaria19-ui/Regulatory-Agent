@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData, RegulatoryChecklistData, ServiceBrainstormData } from '../types';
+import { AnalysisResult, Area, Priority, Status, SavedAnalysis, ValuePropositionData, RegulatoryChecklistData, ServiceBrainstormData, GapAnalysisData } from '../types';
 
 // Helper function to convert file to a Part object for the Gemini API
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string; }; } | { text: string; }> => {
@@ -67,7 +67,7 @@ const analysisSchema = {
                     id: { type: Type.STRING, description: "ID único (REQ-001...)" },
                     requirementText: { type: Type.STRING, description: "Texto resumido do requisito." },
                     detailedDescription: { type: Type.STRING, description: "Explicação prática detalhada." },
-                    area: { type: Type.STRING, description: "Área: Compliance, Jurídico ou TI" },
+                    area: { type: Type.STRING, description: "Área responsável obrigatoriamente dentre as 22 áreas institucionais (ex: Produtos, Tecnologia, Segurança da Informação, Compliance, Jurídico, Riscos, Operações, Atendimento, Design e UX, Growth / CRM, Marketing, Dados, Governança, Controles Internos, Monitoramento, Auditoria, Backoffice, Fraudes, Tesouraria, Contabilidade, Crédito, Ouvidoria)." },
                     priority: { type: Type.STRING, description: "Prioridade: Alta, Média ou Baixa" },
                     status: { type: Type.STRING, description: "Sempre 'Não Iniciado'" },
                     textualEvidence: { type: Type.STRING, description: "Citação do texto original." },
@@ -130,6 +130,30 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
 
     const basePrompt = `Analise o documento regulatório anexo e extraia os requisitos, discrepâncias, menções a agentes financiadores e calcule o Fit Score para os serviços da BIP. 
     
+    CLASSIFICAÇÃO DE ÁREAS RESPONSÁVEIS (Atribua obrigatoriamente a cada requisito uma destas 22 áreas institucionais conforme a abrangência do requisito):
+    1. Produtos: Atualizações ou impacto na funcionalidade do produto, operação do produto ou implementação de novos produtos.
+    2. Marketing: Comunicação com o cliente final em canais internos (funcionários) e externos (clientes).
+    3. Growth / CRM: Régua de relacionamento, CRM e funil de clientes, comunicação externa com clientes.
+    4. Design e UX: Toda parte de telas, alteração em manuais do Banco Central para itens de experiência do usuário e desenvolvimento de novos padrões de design e UX.
+    5. Auditoria: Auditar questões internas, desde que seja exigido na norma.
+    6. Fraudes: Toda questão de fraudes das instituições, MED, PLDFT, e combate a ilícitos.
+    7. Tecnologia: Infraestrutura de TI, APIs, sistemas legados e arquitetura.
+    8. Segurança da Informação: Cibersegurança, criptografia, acesso e proteção de dados sensíveis.
+    9. Compliance: Conformidade regulatória geral e acompanhamento BACEN/CVM.
+    10. Jurídico: Aspectos legais, contratos, termos de uso e regulação aplicável.
+    11. Riscos: Risco operacional, de mercado, liquidez e capital prudencial.
+    12. Operações: Processos rotineiros, liquidação, conciliação e fluxos operacionais.
+    13. Atendimento: Canais de suporte ao cliente, SAC e atendimento de 1º nível.
+    14. Dados: Governança de dados, LGPD, linhagem de dados e inteligência.
+    15. Governança: Estrutura de comitês, governança corporativa e alçadas.
+    16. Controles Internos: Matrizes de risco, testes de controle e autoavaliação.
+    17. Monitoramento: Monitoramento contínuo, alertas e inteligência em tempo real.
+    18. Backoffice: Processamento administrativo interno e liquidação secundária.
+    19. Tesouraria: Caixa, liquidez, gestão ALM e mercado financeiro.
+    20. Contabilidade: Lançamentos contábeis, plano COSIF e demonstrativos.
+    21. Crédito: Concessão de crédito, análise de risco e limites de crédito.
+    22. Ouvidoria: Tratamento de demandas de 2º nível e mediação regulatória.
+
     CÁLCULO DO BIP SERVICE SCORE (0-100):
     - S1 (Estratégia e Transformação Digital): Impacto em inovação, novos modelos de negócio, governança corporativa e visão de futuro.
     - S2 (Adequação Regulatória): Impacto em compliance, jurídico, riscos prudenciais e normas do BACEN/CVM.
@@ -145,7 +169,7 @@ export const analyzeDocument = async (file: File, instructions: string): Promise
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-3-pro-preview",
+            model: "gemini-3.1-pro-preview",
             contents: contents,
             config: {
                 responseMimeType: "application/json",
@@ -248,6 +272,31 @@ const serviceBrainstormSchema = {
         }
     },
     required: ["sections"]
+};
+
+const gapAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        title: { type: Type.STRING, description: "Título da análise de gaps regulatórios" },
+        description: { type: Type.STRING, description: "Resumo introdutório do escopo do documento e finalidade do Gap Analysis" },
+        items: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING, description: "ID único ex: GAP-001" },
+                    regulatoryReference: { type: Type.STRING, description: "Referência regulatória exata, ex: Art. 4º, Inciso II, § 1º ou Capítulo III, Seção I" },
+                    obligationSummary: { type: Type.STRING, description: "Resumo claro e objetivo da Obrigação, Exigência ou Restrição imposta pela norma" },
+                    detailedActionPlan: { type: Type.STRING, description: "Detalhamento das ações práticas, técnicas e operacionais que a instituição precisa realizar para se adequar" },
+                    responsibleArea: { type: Type.STRING, description: "Área responsável obrigatoriamente dentre as 22 áreas institucionais (Produtos, Tecnologia, Segurança da Informação, Compliance, Jurídico, Riscos, Operações, Atendimento, Design e UX, Growth / CRM, Marketing, Dados, Governança, Controles Internos, Monitoramento, Auditoria, Backoffice, Fraudes, Tesouraria, Contabilidade, Crédito, Ouvidoria)." },
+                    impactLevel: { type: Type.STRING, enum: ["Crítico", "Alto", "Médio", "Baixo"] },
+                    estimatedEffort: { type: Type.STRING, description: "Estimativa de esforço ou prazo (ex: Curto Prazo (Até 30 dias), Médio Prazo (30-90 dias), Longo Prazo (> 90 dias))" }
+                },
+                required: ["id", "regulatoryReference", "obligationSummary", "detailedActionPlan", "responsibleArea", "impactLevel", "estimatedEffort"]
+            }
+        }
+    },
+    required: ["title", "description", "items"]
 };
 
 export const generateRegulatoryChecklist = async (analysis: SavedAnalysis): Promise<RegulatoryChecklistData> => {
@@ -366,5 +415,48 @@ export const generateServiceBrainstorm = async (analysis: SavedAnalysis): Promis
     } catch (error: any) {
         console.error("Erro Brainstorming:", error);
         throw new Error("Falha ao gerar o brainstorming de serviços.");
+    }
+};
+
+export const generateGapAnalysis = async (analysis: SavedAnalysis): Promise<GapAnalysisData> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Você é um Consultor Sênior de Auditoria e Riscos Regulatórios da BIP Consulting, especialista no Sistema Financeiro Nacional (BACEN, CVM, ANBIMA).
+    Sua missão é realizar uma "ANÁLISE DE GAPS E ADEQUAÇÃO REGULATÓRIA" altamente estruturada para o documento ${analysis.fileName}.
+
+    OBJETIVO:
+    Com base na norma analisada, identifique todos os pontos que exigem adequação da instituição financeira. Para cada item, forneça EXATAMENTE:
+    1. regulatoryReference: A referência regulatória explícita do dispositivo normativo (ex: "Art. 4º, Inciso II", "Art. 12, § 2º, Alínea 'a'", "Capítulo III - Das Vedações", etc.).
+    2. obligationSummary: Um Resumo claro e direto da Obrigação, Exigência ou Restrição prescrita pela norma.
+    3. detailedActionPlan: O Detalhamento rigoroso e prático do que a instituição precisa fazer para se adequar (processos, sistemas, parametrizações, políticas internas, reportes, rotinas operacionais).
+    4. responsibleArea: A área interna responsável obrigatoriamente dentre as 22 áreas institucionais abaixo:
+       - Produtos: Atualizações ou impacto na funcionalidade do produto ou operação do produto ou implementação de novos produtos.
+       - Marketing: Comunicação com o cliente final em canais internos (funcionários) e externos (clientes).
+       - Growth / CRM: Régua de relacionamento, CRM e funil de clientes, comunicação externa com clientes.
+       - Design e UX: Telas, alteração em manuais do BACEN para itens de experiência do usuário e desenvolvimento de novos padrões de design/UX.
+       - Auditoria: Auditar questões internas exigidas na norma.
+       - Fraudes: Questões de fraudes das instituições, MED, PLDFT e mitigação de ilícitos.
+       - Tecnologia, Segurança da Informação, Compliance, Jurídico, Riscos, Operações, Atendimento, Dados, Governança, Controles Internos, Monitoramento, Backoffice, Tesouraria, Contabilidade, Crédito, Ouvidoria.
+    5. impactLevel: O nível de impacto/severidade se o gap não for tratado ("Crítico", "Alto", "Médio" ou "Baixo").
+    6. estimatedEffort: O esforço ou horizonte temporal ("Curto Prazo (Até 30 dias)", "Médio Prazo (30-90 dias)" ou "Longo Prazo (> 90 dias)").
+
+    RESUMO DA ANÁLISE: ${analysis.summary}
+    REQUISITOS EXTRAÍDOS: ${JSON.stringify(analysis.requirements.slice(0, 25))}
+
+    Gere entre 8 e 12 itens de Gap Analysis cobrindo as principais obrigações do documento. O tom deve ser extremamente técnico, direto e focado em projetos de consultoria de adequação.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-3.1-pro-preview",
+            contents: [{ parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: gapAnalysisSchema,
+            }
+        });
+
+        return JSON.parse(response.text || '{}') as GapAnalysisData;
+    } catch (error: any) {
+        console.error("Erro Gap Analysis:", error);
+        throw new Error("Falha ao gerar a análise de gaps regulatórios.");
     }
 };
